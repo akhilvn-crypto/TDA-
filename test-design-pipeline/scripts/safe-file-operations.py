@@ -11,12 +11,13 @@ result by reading it back.
     safe-file-operations.py write        --root R --target T --source FILE [--expect-sha256 H | --allow-overwrite]
                                          [--schema NAME] [--validate-cases] [--no-backup]
     safe-file-operations.py merge-cases  --root R --target T --source DRAFT [--expect-sha256 H] [--on-conflict fail|skip]
+                                         [--require-story-id]
     safe-file-operations.py replace-case --root R --target T --id ID --source DRAFT --expect-sha256 H --yes
     safe-file-operations.py merge-json   --root R --target T --patch-file P [--schema NAME] [--create] [--touch FIELD]
     safe-file-operations.py append-jsonl --root R --target T (--entry JSON | --entry-file F)
 
-``merge-cases`` appends validated cases to the end of their module in the target and leaves every
-existing byte untouched (user edits survive). ``replace-case`` swaps one case and needs ``--yes``,
+``merge-cases`` appends validated cases to the end of their module section (same module name and
+``User Story ID``) in the target and leaves every existing byte untouched (user edits survive). ``replace-case`` swaps one case and needs ``--yes``,
 which the caller may pass only after the user agreed. All commands print JSON.
 Exit codes: 0 ok, 1 validation findings, 2 usage, 3 conflict/exists, 4 missing/corrupt, 5 outside
 the output folder, 6 I/O error.
@@ -82,7 +83,7 @@ def cmd_write(a) -> int:
             return td.EXIT_FINDINGS
     if a.validate_cases:
         doc = td.parse_test_cases(data.decode("utf-8-sig"))
-        report = td.validation_report(doc, td.validate_doc(doc, None))
+        report = td.validation_report(doc, td.validate_doc(doc, None, require_story_id=a.require_story_id))
         if not report["ok"]:
             td.emit({"ok": False, "error": {"code": "VALIDATION", "message": "Test cases failed validation; nothing was written"},
                      **_summ(report)})
@@ -124,7 +125,7 @@ def cmd_merge_cases(a) -> int:
     if skipped and not src.cases:
         td.emit({"ok": True, "added": [], "skippedExisting": skipped, "note": "Every draft case already exists; nothing to add"})
         return td.EXIT_OK
-    report = td.validation_report(src, td.validate_doc(src, existing))
+    report = td.validation_report(src, td.validate_doc(src, existing, require_story_id=a.require_story_id))
     if not report["ok"]:
         td.emit({"ok": False, "error": {"code": "VALIDATION", "message": "Draft failed validation; nothing was written"},
                  **_summ(report)})
@@ -149,10 +150,10 @@ def _rebuild(doc: td.Doc, keep: list) -> str:
     out: list[str] = []
     last_mod = object()
     for c in keep:
-        if c.module != last_mod:
+        if (c.module, c.story_id) != last_mod:
             if c.module:
-                out += ([""] if out else []) + [f"# {c.module}"]
-            last_mod = c.module
+                out += ([""] if out else []) + td.module_header(c.module, c.story_id)
+            last_mod = (c.module, c.story_id)
         out += [""] + td.case_block(doc, c) if out else td.case_block(doc, c)
     return doc.newline.join(out) + doc.newline
 
@@ -279,6 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-overwrite", action="store_true")
     p.add_argument("--schema")
     p.add_argument("--validate-cases", action="store_true")
+    p.add_argument("--require-story-id", action="store_true", help="with --validate-cases: also require 'User Story ID:'")
     p.add_argument("--no-backup", action="store_true")
     p.set_defaults(fn=cmd_write)
 
@@ -288,6 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source", required=True)
     p.add_argument("--expect-sha256")
     p.add_argument("--on-conflict", choices=["fail", "skip"], default="fail")
+    p.add_argument("--require-story-id", action="store_true",
+                   help="reject a draft whose module sections lack a 'User Story ID:' line")
     p.set_defaults(fn=cmd_merge_cases)
 
     p = sub.add_parser("replace-case")

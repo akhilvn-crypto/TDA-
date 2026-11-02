@@ -10,7 +10,7 @@ Two layers. **Deterministic** (scripts, authoritative for structure) and **seman
 
 ## Commands
 
-- Draft: `PY SCRIPTS/validate-test-cases.py <draft> --existing "<root>/test-design/test-cases/test-cases.md"` (omit `--existing` on the first story). Exit 0 = no errors; 1 = errors (JSON in stdout either way). Add `--strict` to fail on warnings.
+- Draft: `PY SCRIPTS/validate-test-cases.py <draft> --existing "<root>/test-design/test-cases/test-cases.md" --require-story-id` (omit `--existing` on the first story). `--require-story-id` is for newly generated drafts only; saved files written before the field existed validate without it. Exit 0 = no errors; 1 = errors (JSON in stdout either way). Add `--strict` to fail on warnings.
 - Formatting fixes: `... --fix-safe --fix-output <fixed.md>` writes a normalised copy (trailing spaces, step numbering, bullet markers, spacing around `-> Expected:`, blank lines). It never edits the input and never changes meaning; it cannot invent IDs.
 - Saved file: `PY SCRIPTS/validate-test-cases.py "<root>/test-design/test-cases/test-cases.md"` and
   `PY SCRIPTS/validate-traceability.py --test-cases "<root>/test-design/test-cases/test-cases.md" --traceability "<root>/test-design/state/traceability.json" --fingerprints "<root>/test-design/state/source-fingerprints.json"`.
@@ -39,10 +39,14 @@ Read `summary` and `findings` (each: `code`, `severity`, `message`, `line`, `cas
 | `DUPLICATE_SCENARIO` | Identical preconditions, data, steps and results as another case. Remove one or make the data differ meaningfully |
 | `STRAY_CONTENT` / `UNKNOWN_FIELD` / `UNKNOWN_SECTION` / `UNKNOWN_HEADING` / `DUPLICATE_SECTION` / `DUPLICATE_FIELD` / `FIELD_EMPTY` / `BULLET_FORMAT` | Structure outside the contract. Remove or restructure |
 | `NO_CASES` | File has no `## ID: Title` headings |
+| `STORY_ID_MISSING` | Only with `--require-story-id`: a module has no `User Story ID:` line (or a case sits outside any module). Add it directly under the `#` heading |
+| `STORY_ID_FORMAT` / `STORY_ID_EMPTY` | Value is not a story ID like `US-001` (letters, digits, `.`, `_`, `-`), or is blank |
+| `STORY_ID_MULTIPLE` | More than one ID on the line. Repeat the module heading once per story instead |
+| `STORY_ID_PLACEMENT` | `User Story ID:` inside a test case or outside a module. It belongs directly under the `#` heading, once (a second line is `DUPLICATE_FIELD`) |
 
 **Warnings (report, do not block)**: `STEP_NUMBERING` (auto-fixable), `SECTION_ORDER`, `PRIORITY_VALUE`, `EXPECTED_DUPLICATED` (inline expectation repeated under Expected Results; keep one), `EXPECTED_VAGUE` (vague words without a quoted value; improve if the story gives the value), `VARIABLE_UNUSED`, `DUPLICATE_TITLE` (same title in a module; make titles distinct).
 
-**Traceability** (`validate-traceability.py`): errors `SCHEMA`, `ORPHAN_CASE` (case with no mapping or no ID), `NO_STORY`, `UNKNOWN_STORY`, `BAD_COVERS`; warnings `STALE_MAPPING`, `STORY_UNCOVERED`, `CRITERION_UNCOVERED`, `SOURCE_STORY_MISSING`.
+**Traceability** (`validate-traceability.py`): errors `SCHEMA`, `ORPHAN_CASE` (case with no mapping or no ID), `NO_STORY`, `UNKNOWN_STORY`, `BAD_COVERS`; warnings `STORY_ID_MISMATCH` (section story ID not among the case's mapped stories), `STALE_MAPPING`, `STORY_UNCOVERED`, `CRITERION_UNCOVERED`, `SOURCE_STORY_MISSING`.
 
 ## Procedure for a draft
 

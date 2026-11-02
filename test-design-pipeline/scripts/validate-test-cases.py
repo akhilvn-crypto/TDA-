@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Validate a test-case Markdown file against the canonical contract.
 
-    validate-test-cases.py FILE [--existing FILE] [--external-id ID ...] [--strict]
+    validate-test-cases.py FILE [--existing FILE] [--external-id ID ...] [--strict] [--require-story-id]
     validate-test-cases.py FILE --fix-safe --fix-output PATH
 
 Checks structure, unique IDs, expected results, ``{variable}`` declarations, ``env:`` references,
 secret-looking values, dependencies (existing + acyclic), implementation detail in steps and
-duplicate scenarios. ``--existing`` supplies already-saved cases: their IDs are valid dependency
+duplicate scenarios, and the optional module-level ``User Story ID:`` line (format, one per module,
+required only with ``--require-story-id``). ``--existing`` supplies already-saved cases: their IDs are valid dependency
 targets and are checked for duplicates. Prints a JSON report; exit 1 when there are errors
 (or any finding with ``--strict``). ``--fix-safe`` writes a formatting-only normalised copy to
 ``--fix-output`` and never edits FILE.
@@ -27,6 +28,9 @@ def main() -> int:
     ap.add_argument("--existing", help="saved test-cases.md to check IDs, dependencies and duplicates against")
     ap.add_argument("--external-id", action="append", default=[], help="extra valid dependency ID (repeatable)")
     ap.add_argument("--strict", action="store_true", help="treat warnings as failures")
+    ap.add_argument("--require-story-id", action="store_true",
+                    help="error when a module has no 'User Story ID:' line (for newly generated drafts; "
+                         "older files without the field validate without this flag)")
     ap.add_argument("--fix-safe", action="store_true", help="write a formatting-only fixed copy to --fix-output")
     ap.add_argument("--fix-output")
     args = ap.parse_args()
@@ -56,7 +60,7 @@ def main() -> int:
         if ep.is_file():
             existing = td.parse_test_cases(td.read_text(ep))
     doc = td.parse_test_cases(text)
-    findings = td.validate_doc(doc, existing, set(args.external_id))
+    findings = td.validate_doc(doc, existing, set(args.external_id), require_story_id=args.require_story_id)
     report = td.validation_report(doc, findings, str(path))
     report.update(fix_info)
     td.emit(report)

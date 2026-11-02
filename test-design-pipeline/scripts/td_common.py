@@ -291,6 +291,10 @@ AUTO_ID_RE = re.compile(r"^AUTO-[0-9a-f]{8}$")
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(\S.*?)[ \t]*$")
 _CASE_HEAD_RE = re.compile(r"^(?P<id>[A-Za-z][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)+)[ \t]*:[ \t]*(?P<title>.*)$")
 _FIELD_RE = re.compile(r"^(Priority|Tags|Depends on):[ \t]*(.*)$")
+_STORY_FIELD_RE = re.compile(r"^User Story ID:[ \t]*(.*)$")
+# Story IDs are free-form tokens such as US-001 or PROJ-123 (also tolerates IDs inferred from a file name).
+STORY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+STORY_FIELD = "User Story ID"
 _STEP_RE = re.compile(r"^(\d+)\.[ \t]+(.*)$")
 _BULLET_RE = re.compile(r"^[-*][ \t]+(.*)$")
 _DATA_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):[ \t]*(.*)$")
@@ -363,6 +367,7 @@ class Case:
     data: dict[str, DataItem] = field(default_factory=dict)
     steps: list[Step] = field(default_factory=list)
     expected: list[tuple[int, str]] = field(default_factory=list)
+    story_id: Optional[str] = None  # inherited from the enclosing module's "User Story ID:" line
 
     @property
     def depends_on(self) -> list[str]:
@@ -379,6 +384,8 @@ class ModuleSpan:
     name: str
     line_idx: int  # 0-based heading index
     end_idx: int = 0  # 0-based exclusive (next module heading or EOF)
+    story_id: Optional[str] = None  # value of the "User Story ID:" line, None when absent or invalid
+    story_line_idx: Optional[int] = None  # 0-based index of that line
 
 
 @dataclass
@@ -403,6 +410,7 @@ def parse_test_cases(text: str) -> Doc:
     cases: list[Case] = []
     modules: list[ModuleSpan] = []
     cur_mod: Optional[str] = None
+    cur_span: Optional[ModuleSpan] = None
     cur_case: Optional[Case] = None
     cur_sec: Optional[Section] = None
     in_fence = False
@@ -431,13 +439,15 @@ def parse_test_cases(text: str) -> Doc:
                 close_case(i)
                 if modules:
                     modules[-1].end_idx = i
-                modules.append(ModuleSpan(title, i))
+                cur_span = ModuleSpan(title, i)
+                modules.append(cur_span)
                 cur_mod = title
             elif level == 2:
                 close_case(i)
                 m = _CASE_HEAD_RE.match(title)
                 cid, ctitle = (m.group("id"), m.group("title").strip()) if m else (None, title)
-                cur_case = Case(cid, ctitle, cur_mod, i + 1, i)
+                cur_case = Case(cid, ctitle, cur_mod, i + 1, i,
+                                story_id=cur_span.story_id if cur_span else None)
                 cases.append(cur_case)
             elif level == 3:
                 if cur_case is None:
@@ -464,6 +474,18 @@ def parse_test_cases(text: str) -> Doc:
         if not s.strip():
             continue
         # non-blank content line
+        sm = _STORY_FIELD_RE.match(s)
+        if sm and cur_sec is None:
+            if cur_case is None and cur_span is not None:
+                _read_story_id(cur_span, sm.group(1).strip(), i, findings)
+            elif cur_case is None:
+                findings.append(Finding("STORY_ID_PLACEMENT", "error",
+                                        f"'{STORY_FIELD}:' must come directly under a '# Module' heading", i + 1))
+            else:
+                findings.append(Finding("STORY_ID_PLACEMENT", "error",
+                                        f"'{STORY_FIELD}:' belongs directly under the module heading, "
+                                        "not inside a test case", i + 1, cur_case.id))
+            continue
         if cur_case is None:
             where = "before the first heading" if not modules else f"under module '{cur_mod}' before a test case"
             findings.append(Finding("STRAY_CONTENT", "error", f"Text {where} is not part of the contract", i + 1))
@@ -485,6 +507,28 @@ def parse_test_cases(text: str) -> Doc:
     if modules:
         modules[-1].end_idx = len(lines)
     return Doc(lines, cases, modules, findings, newline)
+
+
+def _read_story_id(span: ModuleSpan, value: str, idx: int, findings: list[Finding]) -> None:
+    """Record a module's ``User Story ID:`` line; a bad value is reported, never guessed at."""
+    line = idx + 1
+    if span.story_line_idx is not None:
+        findings.append(Finding("DUPLICATE_FIELD", "error",
+                                f"'{STORY_FIELD}:' appears twice under module '{span.name}'", line))
+        return
+    span.story_line_idx = idx
+    if not value:
+        findings.append(Finding("STORY_ID_EMPTY", "error",
+                                f"'{STORY_FIELD}:' is present but empty (omit it instead)", line))
+    elif re.search(r"[,;\s]", value):
+        findings.append(Finding("STORY_ID_MULTIPLE", "error",
+                                f"'{STORY_FIELD}:' takes exactly one story ID. For several stories, repeat the "
+                                f"'# {span.name}' heading once per story", line))
+    elif not STORY_ID_RE.match(value):
+        findings.append(Finding("STORY_ID_FORMAT", "error",
+                                f"'{value[:40]}' is not a valid story ID (expected something like US-001)", line))
+    else:
+        span.story_id = value
 
 
 def _analyse_case(case: Case, findings: list[Finding]) -> None:
@@ -549,13 +593,28 @@ def case_signature(case: Case) -> str:
     return sha256_text("\n".join(parts))
 
 
-def validate_doc(doc: Doc, existing: Optional[Doc] = None, external_ids: Optional[set[str]] = None) -> list[Finding]:
+def validate_doc(doc: Doc, existing: Optional[Doc] = None, external_ids: Optional[set[str]] = None,
+                 require_story_id: bool = False) -> list[Finding]:
     """Structural and mechanical-quality checks (rule list in rules/test-case-format.md).
 
     ``existing`` is a parsed copy of cases already saved: its IDs are valid dependency
-    targets, and its titles/scenarios are checked for duplicates.
+    targets, and its titles/scenarios are checked for duplicates. ``User Story ID:`` is
+    optional so files written before the field existed stay valid; ``require_story_id``
+    (used for newly generated drafts) makes a module without a valid one an error.
     """
     out: list[Finding] = list(doc.findings)
+    if require_story_id:
+        for m in doc.modules:
+            # a present-but-bad line already produced its own STORY_ID_* finding
+            if m.story_line_idx is None:
+                out.append(Finding("STORY_ID_MISSING", "error",
+                                   f"Module '{m.name}' has no '{STORY_FIELD}:' line directly under its heading",
+                                   m.line_idx + 1))
+        for c in doc.cases:
+            if c.module is None:
+                out.append(Finding("STORY_ID_MISSING", "error",
+                                   "Test case is outside any '# Module' section, so it has no User Story ID",
+                                   c.line, c.id))
     existing_ids = {c.id for c in existing.cases if c.id} if existing else set()
     known_ids = {c.id for c in doc.cases if c.id} | existing_ids | (external_ids or set())
 
@@ -738,7 +797,7 @@ def validation_report(doc: Doc, findings: list[Finding], label: str = "") -> dic
         # findings with no id (ID_MISSING) are matched by line
         errs += sum(1 for f in findings if f.severity == "error" and not c.id and f.line and c.line <= f.line <= c.end)
         warns = sum(1 for f in findings if f.severity == "warning" and f.case_id == c.id and c.id)
-        per_case.append({"id": c.id, "title": c.title, "module": c.module, "line": c.line,
+        per_case.append({"id": c.id, "title": c.title, "module": c.module, "storyId": c.story_id, "line": c.line,
                          "errors": errs, "warnings": warns, "valid": errs == 0})
     n_err = sum(1 for f in findings if f.severity == "error")
     n_warn = sum(1 for f in findings if f.severity == "warning")
@@ -814,35 +873,46 @@ def case_block(doc: Doc, case: Case) -> list[str]:
     return doc.lines[case.start:case.end]
 
 
+def module_header(name: str, story_id: Optional[str]) -> list[str]:
+    """Module heading, with its ``User Story ID:`` line directly below when there is one."""
+    return [f"# {name}"] + ([f"{STORY_FIELD}: {story_id}"] if story_id else [])
+
+
 def merge_cases_text(target_text: str, source: Doc) -> tuple[str, dict]:
     """Insert the source cases into the target text without touching existing bytes.
 
-    New cases go at the end of their module (``# General`` when the source case has none);
-    unknown modules are appended at the end of the file.
+    A module section is identified by its name *and* its ``User Story ID`` (a file may hold
+    several sections with the same name, one per story). New cases go at the end of the section
+    with the same name and story ID (``# General`` when the source case has no module). When no
+    such section exists, a new one is appended at the end of the file, so a legacy section
+    without a story ID is never silently attributed to a story.
     """
     target = parse_test_cases(target_text) if target_text.strip() else Doc([], [], [], [], "\n")
     nl = target.newline if target_text.strip() else source.newline
     lines = list(target.lines)
     inserts: dict[int, list[list[str]]] = {}
-    new_modules: dict[str, list[list[str]]] = {}
-    placed = {"general": [], "newModules": [], "perModule": {}}
+    new_modules: dict[tuple[str, Optional[str]], list[list[str]]] = {}
+    placed = {"general": [], "newModules": [], "perModule": {}, "perStory": {}}
 
     for c in source.cases:
         mod = c.module or "General"
+        key = (mod, c.story_id)
         if c.module is None:
             placed["general"].append(c.id)
         block = case_block(source, c)
-        spans = [m for m in target.modules if m.name == mod]
+        spans = [m for m in target.modules if (m.name, m.story_id) == key]
         if spans:
             span = spans[-1]
             ends = [t.end for t in target.cases if span.line_idx < t.start < span.end_idx]
-            at = max(ends) if ends else span.line_idx + 1
+            at = max(ends) if ends else max(span.line_idx, span.story_line_idx or 0) + 1
             inserts.setdefault(at, []).append(block)
         else:
-            if mod not in new_modules:
+            if key not in new_modules:
                 placed["newModules"].append(mod)
-            new_modules.setdefault(mod, []).append(block)
+            new_modules.setdefault(key, []).append(block)
         placed["perModule"].setdefault(mod, []).append(c.id)
+        if c.story_id:
+            placed["perStory"].setdefault(c.story_id, []).append(c.id)
 
     out = list(lines)
     for at in sorted(inserts, reverse=True):
@@ -850,10 +920,10 @@ def merge_cases_text(target_text: str, source: Doc) -> tuple[str, dict]:
         for block in inserts[at]:
             chunk += [""] + block
         out[at:at] = chunk
-    for mod, blocks in new_modules.items():
+    for (mod, sid), blocks in new_modules.items():
         while out and not out[-1].strip():
             out.pop()
-        out += ([""] if out else []) + [f"# {mod}"]
+        out += ([""] if out else []) + module_header(mod, sid)
         for block in blocks:
             out += [""] + block
     while out and not out[-1].strip():

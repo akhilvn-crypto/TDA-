@@ -4,6 +4,7 @@ This is the interface to the Automation Builder. Do not replace it, add fields, 
 
 ```markdown
 # Module                                  <- optional grouping; may repeat in one file
+User Story ID: US-001                     <- the story every case in this section belongs to
 
 ## TC-001: Valid user can sign in         <- ID: Title
 Priority: High                            <- optional
@@ -32,12 +33,15 @@ The `<-` notes are explanations for you; never write them into a test-case file.
 ## Rules
 
 - Headings: `#` module, `##` case, `###` only `Preconditions`, `Test Data`, `Steps`, `Expected Results`, in that order. No other headings, no prose between them, no front matter.
+- **`User Story ID:`** goes on the line directly below the `#` module heading (a blank line between is tolerated) and applies to every case until the next `#` heading. One ID per heading: `US-001`, `PROJ-123` (letters, digits, `.`, `_`, `-`). Never repeat it inside a test case; a case does not carry its own story ID.
+- **Several stories in one module:** repeat the module heading once per story, each with its own `User Story ID:`; put each case under the heading of its story. Do not list several IDs on one line.
+- **Optional for old files.** A file (or a module) without the line stays valid and is read as before. The plugin always writes it for new cases (`--require-story-id` on the validator and `merge-cases`). `merge-cases` appends to the section with the same module name *and* story ID, and starts a new section otherwise; a legacy section without the line is never relabelled.
 - Fields directly under the `##` line, in any order, only `Priority:`, `Tags:`, `Depends on:`. Omit a field instead of leaving it empty. Priority is one of Critical, High, Medium, Low.
 - **This plugin always writes the ID**: `## <ID>: <Title>`. A supplied ID is used verbatim. Otherwise derive `AUTO-xxxxxxxx` with `scripts/generate-stable-id.py` (never invent or hand-type one). An existing ID is never changed on regeneration or edit.
 - Steps: one action each, numbered 1..n, imperative, in domain language. Inline `-> Expected:` only for an immediate assertion; do not repeat it under Expected Results.
 - Expected results: specific, observable, assertable ("The message "Invalid email or password" is displayed", not "login fails properly"). At least one per case, inline or in the section.
 - `Depends on:` lists IDs that exist, never itself, never forming a cycle. Use it only when the case genuinely cannot run without the other having run first.
 - Test Data: plain literal for ordinary values; `env:NAME` for secrets and environment-specific values; `literal:value` for a deliberately fake or explicitly fixed value. Details in `test-data-and-secrets.md`.
-- Story traceability is **not** part of this file. It lives in `state/traceability.json`.
+- The module-level `User Story ID:` is the only story reference in this file. Criterion labels (`AC-1`), covers and technique metadata are **not** part of it; the full mapping lives in `state/traceability.json`.
 
 `scripts/validate-test-cases.py` enforces this. Findings and what they mean: `skills/test-case-validation/SKILL.md`.

@@ -66,7 +66,7 @@ For story `S`:
 **C. Generate.** Checkpoint (`generate`, `lastCompletedStage: "design"`). Invoke `test-design-pipeline:test-case-generator` with the analysis, conditions, the module name convention in the existing file, the path of the existing `traceability.json`, and the draft paths `TMP/draft-S.md` and `TMP/draft-S.meta.json`. It writes both, computing IDs with `generate-stable-id.py`.
 
 **D. Validate.** Checkpoint (`validate`, `lastCompletedStage: "generate"`). Follow `test-case-validation`:
-   1. `PY SCRIPTS/validate-test-cases.py TMP/draft-S.md --existing OUT/test-cases/test-cases.md`.
+   1. `PY SCRIPTS/validate-test-cases.py TMP/draft-S.md --existing OUT/test-cases/test-cases.md --require-story-id` (the draft must carry `User Story ID: S` under its module heading).
    2. Formatting-only errors: `--fix-safe --fix-output TMP/draft-S.fixed.md`, then validate the fixed copy and continue with it.
    3. Invoke `test-design-pipeline:test-case-quality-checker` with the analysis, conditions, draft, meta and the validator report. It checks coverage, clarity, testability, data, dependencies, duplicates and IDs, and applies only unambiguous corrections to a copy.
    4. Errors that can be fixed without inventing behaviour: send them back to `test-case-generator` (at most two repair rounds). Errors that need information the story does not give: ask the user, or drop that case and any case depending on it and record why.
@@ -76,7 +76,7 @@ For story `S`:
    1. **Traceability first.** Build a JSON merge patch with `"version": 1` (required by the schema when the file is first created), the story (`sourceFile`, `title`, `criteria` labels = the `criteriaLabels` printed by `story-analysis-state.py complete`, `status: "analysed"`) and each case's metadata (only cases that passed validation), then
       `PY SCRIPTS/safe-file-operations.py merge-json --root ROOT --target test-design/state/traceability.json --patch-file TMP/trace-S.json --schema traceability --create --touch updatedAt`.
    2. **Cases.** Hash first if a file exists: `safe-file-operations.py hash OUT/test-cases/test-cases.md`; then
-      `PY SCRIPTS/safe-file-operations.py merge-cases --root ROOT --target test-design/test-cases/test-cases.md --source <validated draft> [--expect-sha256 <outputs.testCases.sha256 from workflow.json>]`.
+      `PY SCRIPTS/safe-file-operations.py merge-cases --root ROOT --target test-design/test-cases/test-cases.md --source <validated draft> --require-story-id [--expect-sha256 <outputs.testCases.sha256 from workflow.json>]`.
       - `userEditsDetected: true`: the file was edited; tell the user in the summary, nothing is lost.
       - Exit 3 `ID_CONFLICT`: these IDs are already saved. Compare each with the draft. Identical content = already saved (a resumed run), treat as done. Different content: ask the user to keep the existing case or replace it (`replace-case ... --expect-sha256 <current> --yes`, only after a yes; a backup is kept).
       - Exit 1 `VALIDATION`: the draft changed since you validated it; return to step D.

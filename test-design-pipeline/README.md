@@ -85,6 +85,7 @@ The contract with the Automation Builder (see `templates/test-cases.template.md`
 
 ```markdown
 # Login
+User Story ID: US-001
 
 ## AUTO-ea4e94fb: Valid user can sign in
 Priority: High
@@ -108,6 +109,7 @@ Tags: smoke, auth
 - The URL contains "/dashboard"
 ```
 
+- **User Story ID** sits directly under the `# Module` heading and applies to every case in that section; it is never repeated inside a case. A module that covers several stories repeats its heading once per story, each with its own `User Story ID:`. The line is optional when reading, so files written before it existed stay valid and are read as before; newly generated cases always carry it.
 - **IDs** are always written. Use your own test IDs if your stories supply them; otherwise the plugin derives a stable `AUTO-xxxxxxxx` from the source story ID and the case title. An ID is never changed afterwards, even if you rename the case.
 - **Test data:** `env:NAME` for secrets and environment-specific values (the value lives in `automation/.env`, which this plugin never touches), `literal:value` for deliberately fake fixed values, and plain text for ordinary values. Secret values are never written to any file or message.
 - **Steps** are actions and **expected results** are observable outcomes. No selectors or automation code.

@@ -15,9 +15,9 @@ skills: test-design-pipeline:test-case-authoring, test-design-pipeline:test-case
 **Do**
 - Read `${CLAUDE_PLUGIN_ROOT}/rules/test-case-format.md`, `test-data-and-secrets.md`, `traceability.md` and follow `${CLAUDE_PLUGIN_ROOT}/skills/test-case-authoring/SKILL.md`.
 - Compute IDs with `generate-stable-id.py --batch` (via Bash, `python` / `python3` / `py -3`) before writing, so `Depends on:` can use real IDs. Skip scenarios whose result has `exists: true`.
-- Write the draft and the metadata file to the exact paths given. The draft is Markdown only: no story IDs, no criterion labels, no comments.
+- Write the draft and the metadata file to the exact paths given. The draft is Markdown only: `User Story ID: <storyId>` directly under the module heading (the story you were given), and otherwise no story IDs, no criterion labels, no comments.
 - Quote exact messages, URLs and values from the analysis; declare every `{variable}`; use `env:` for secrets and environment-specific values and `literal:` for deliberate fake values.
-- Run `validate-test-cases.py <draft>` yourself as a self-check and repair what you can before returning.
+- Run `validate-test-cases.py <draft> --require-story-id` yourself as a self-check and repair what you can before returning.
 - Return a short JSON: `{"draft": path, "meta": path, "cases": [{id, title, module}], "selfCheck": {errors, warnings}}`.
 
 **Do not**

@@ -4,7 +4,7 @@ This repository is a Claude Code **plugin marketplace** (`tda`). It currently sh
 
 | Plugin | Version | What it does |
 |---|---|---|
-| [`test-design-pipeline`](test-design-pipeline/README.md) | 0.3.0 | Turns Markdown user stories into automation-ready, traceable test cases |
+| [`test-design-pipeline`](test-design-pipeline/README.md) | 0.4.0 | Turns Markdown user stories into automation-ready, traceable test cases |
 
 Test Design decides **what to validate**. A downstream automation tool decides how to automate and run it. The plugin does not edit your stories, repeat BA gap analysis, or write Playwright code.
 

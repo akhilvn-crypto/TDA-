@@ -15,6 +15,7 @@ Format and field rules: read `rules/test-case-format.md` and `rules/test-data-an
    (omit `--traceability` on the first story). If the story supplies its own test ID, use it verbatim instead. A result with `exists: true` means this scenario is already saved: do not write it again.
    Write `Depends on:` with the IDs from this same batch or from saved cases; decide dependencies before writing so the IDs are known.
 2. **Module.** Group under a `# Module` heading named for the feature area (the story's capability, for example "Login"). Reuse the exact module name already in `test-cases.md` for the same area (case-sensitive) so new cases land in the existing section.
+   Put `User Story ID: <storyId>` on the line directly below the heading, using the ID of the story the draft is for. All cases in a draft belong to that one story, so a draft has one module section; if a module needs cases for another story, that is another draft with its own heading and story ID. Never repeat the ID inside a case.
 3. **Write each case** in the exact structure of the contract:
    - Title: the behaviour under test, outcome-oriented ("Account locks after five failed attempts"), unique within the module.
    - `Priority` / `Tags` / `Depends on`: only when meaningful. Tags are short lowercase words (`smoke`, `auth`, `boundary`, `negative`).
@@ -31,7 +32,7 @@ Format and field rules: read `rules/test-case-format.md` and `rules/test-data-an
 - Each expected result must be something a test can assert: visible text, URL, enabled/disabled state, count, stored value. Not "works", "as expected", "correctly".
 - No selectors, CSS/XPath, `page.` calls, waits, or framework names. No "click the button with id ...".
 - Never copy a secret value; never invent a message, limit or field the story does not state.
-- Do not add story IDs or acceptance-criterion labels into the Markdown.
+- The only story reference in the Markdown is the module-level `User Story ID:` line. No story IDs inside cases and no acceptance-criterion labels.
 
 ## Never
 

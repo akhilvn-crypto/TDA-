@@ -7,7 +7,8 @@
 Errors: schema violations, a test case with no mapping or no story, a mapping to a story that is
 not tracked, a ``covers`` entry that names an unknown story/criterion.
 Warnings: mappings whose case is no longer in the file, stories (or criteria) with no covering
-case, stories missing from the source fingerprints. Exit 1 on errors.
+case, stories missing from the source fingerprints, a case whose module-level ``User Story ID``
+is not among the stories it is mapped to. Exit 1 on errors.
 """
 from __future__ import annotations
 
@@ -62,6 +63,12 @@ def main() -> int:
             err("ORPHAN_CASE", f"Test case '{c.title}' (line {c.line}) has no ID, so it cannot be mapped to a story")
         elif c.id not in mapped:
             err("ORPHAN_CASE", f"{c.id} is in the test-case file but has no entry in traceability.json", c.id)
+    for c in doc.cases:
+        meta = mapped.get(c.id) if c.id else None
+        if c.story_id and isinstance(meta, dict) and meta.get("storyIds") and c.story_id not in meta["storyIds"]:
+            warn("STORY_ID_MISMATCH",
+                 f"{c.id} sits under 'User Story ID: {c.story_id}' but traceability.json maps it to "
+                 f"{', '.join(meta['storyIds'])}", c.id)
     for cid in mapped:
         if cid not in file_ids:
             warn("STALE_MAPPING", f"{cid} is mapped in traceability.json but no longer in the test-case file", cid)
