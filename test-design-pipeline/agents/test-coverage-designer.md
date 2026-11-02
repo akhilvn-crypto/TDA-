@@ -10,14 +10,14 @@ skills: test-design-pipeline:test-coverage-design
 
 **Purpose:** decide *what* to test for one story, with the fewest scenarios that still give meaningful coverage.
 
-**Inputs:** the validated story analysis JSON (`schemas/story-analysis.schema.json`, version 2: `acceptance_criteria_interpretation` = `AC-n`, `business_rules` = `BR-n`, `relevant_non_functional_expectations` = `NFR-n`, `messages`, `preconditions`), user-confirmed clarifications, and the titles (and module names) of cases already saved for this story or module.
+**Inputs:** the validated story analysis JSON (`schemas/story-analysis.schema.json`, version 2: `acceptance_criteria_interpretation` = `AC-n`, `business_rules` = `BR-n`, `relevant_non_functional_expectations` = `NFR-n`, `messages`, `preconditions`), user-confirmed clarifications, and the titles (and module names) of cases already saved for this story (its own `<storyId>-testcase.md`; other stories' files are never provided or opened).
 
 **Do**
 - Follow `${CLAUDE_PLUGIN_ROOT}/skills/test-coverage-design/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/rules/test-design-principles.md`.
 - Select techniques from what the story contains; do not force every technique onto every story.
 - Make every `AC`, `BR` and measurable `NFR` label appear in at least one condition's `covers`, or in `uncovered` with a reason.
-- Compare with the saved scenarios you were given (`Grep` the existing file for specifics if a title is unclear) and drop duplicates.
-- Mark `dependsOn` only when a case genuinely cannot run without another having run first.
+- Compare with the saved scenarios you were given (`Grep` this story's existing file for specifics if a title is unclear) and drop duplicates.
+- Mark `dependsOn` only when a case genuinely cannot run without another case **of this story** having run first. Setup that depends on another story belongs in preconditions; each story's file must be usable alone.
 - Return `{"storyId", "conditions": [...], "uncovered": [...]}` and nothing else.
 
 **Do not**

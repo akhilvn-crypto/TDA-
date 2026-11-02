@@ -41,6 +41,10 @@ class TempProject(unittest.TestCase):
     def cases_path(self) -> Path:
         return self.root / "test-design" / "test-cases" / "test-cases.md"
 
+    def story_path(self, story_id: str) -> Path:
+        """Where the per-story test-case file for ``story_id`` lives."""
+        return self.root / "test-design" / "test-cases" / f"{story_id}-testcase.md"
+
     def write(self, name: str, text: str) -> Path:
         p = self.root / name
         p.parent.mkdir(parents=True, exist_ok=True)

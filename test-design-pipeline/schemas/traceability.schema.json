@@ -22,7 +22,12 @@
             "type": "array",
             "items": { "type": "string", "pattern": "^[^#\\s]+$" }
           },
-          "status": { "type": "string", "enum": ["analysed", "no_testable_behaviour"] }
+          "status": { "type": "string", "enum": ["analysed", "no_testable_behaviour"] },
+          "testCaseFile": {
+            "description": "Project-root-relative path of this story's own test-case file, test-design/test-cases/<USER_STORY_ID>-testcase.md.",
+            "type": "string",
+            "pattern": "^[^\\\\]+-testcase\\.md$"
+          }
         }
       }
     },

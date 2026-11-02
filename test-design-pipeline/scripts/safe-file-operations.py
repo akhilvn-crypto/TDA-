@@ -11,14 +11,26 @@ result by reading it back.
     safe-file-operations.py write        --root R --target T --source FILE [--expect-sha256 H | --allow-overwrite]
                                          [--schema NAME] [--validate-cases] [--no-backup]
     safe-file-operations.py merge-cases  --root R --target T --source DRAFT [--expect-sha256 H] [--on-conflict fail|skip]
-                                         [--require-story-id]
+                                         [--require-story-id] [--story-id S [--adopt-existing]]
     safe-file-operations.py replace-case --root R --target T --id ID --source DRAFT --expect-sha256 H --yes
+    safe-file-operations.py regenerate-story-file --root R --story-id S --source DRAFT --expect-sha256 H
+                                         [--yes [--accept-user-edits]]
+    safe-file-operations.py split-legacy --root R [--yes]
     safe-file-operations.py merge-json   --root R --target T --patch-file P [--schema NAME] [--create] [--touch FIELD]
     safe-file-operations.py append-jsonl --root R --target T (--entry JSON | --entry-file F)
 
 ``merge-cases`` appends validated cases to the end of their module section (same module name and
 ``User Story ID``) in the target and leaves every existing byte untouched (user edits survive). ``replace-case`` swaps one case and needs ``--yes``,
 which the caller may pass only after the user agreed. All commands print JSON.
+
+Test cases live in one file per story, ``test-design/test-cases/<USER_STORY_ID>-testcase.md``. With
+``--story-id S``, ``merge-cases`` insists on that exact target, accepts only S's cases, refuses IDs that
+belong to other stories (read from traceability.json, never from another test-case file) and will not append to
+a file this run never recorded unless ``--adopt-existing`` says the user agreed. ``regenerate-story-file``
+replaces one story's whole file: without ``--yes`` it only reports what would be kept, added, removed and
+changed; with ``--yes`` it writes (backup kept), and ``--accept-user-edits`` is also needed when the file was
+edited since it was last recorded. ``split-legacy`` turns an old consolidated ``test-cases.md`` into per-story
+files (dry run unless ``--yes``; the old file is moved to ``state/backups/``, never deleted).
 Exit codes: 0 ok, 1 validation findings, 2 usage, 3 conflict/exists, 4 missing/corrupt, 5 outside
 the output folder, 6 I/O error.
 """
@@ -94,9 +106,41 @@ def cmd_write(a) -> int:
     return td.EXIT_OK
 
 
+TRACEABILITY = f"{td.OUTPUT_DIRNAME}/state/traceability.json"
+
+
+def _foreign_ids(root: Path, story_id: str) -> dict:
+    """IDs the traceability index assigns to other stories (empty when there is no index yet)."""
+    p = td.confine(root, TRACEABILITY)
+    if not p.is_file():
+        return {}
+    try:
+        return td.foreign_case_ids(json.loads(td.read_text(p)), story_id)
+    except ValueError:
+        raise td.SafeOpError("STATE_CORRUPT", f"{p.name} is not valid JSON. It was not changed; "
+                             "explain this to the user and ask how to proceed.", td.EXIT_MISSING)
+
+
+def _story_target(root: Path, story_id: str, target: Path) -> Path:
+    want = td.confine(root, td.testcase_rel_path(story_id))
+    if target != want:
+        raise td.SafeOpError("WRONG_TARGET", f"Story {story_id}'s test cases belong in {td.testcase_rel_path(story_id)}, "
+                             f"not {target.name}.", td.EXIT_USAGE)
+    return want
+
+
 def cmd_merge_cases(a) -> int:
     root = Path(a.root)
     target = td.confine(root, a.target)
+    foreign = None
+    if a.story_id:
+        _story_target(root, a.story_id, target)
+        foreign = _foreign_ids(root, a.story_id)
+        if target.is_file() and not a.expect_sha256 and not a.adopt_existing:
+            raise td.SafeOpError("EXISTS_UNTRACKED",
+                                 f"{target.name} already exists but this run has not recorded it. Show the user what it holds and ask "
+                                 "whether to append to it; only then repeat with --adopt-existing. Nothing was written.",
+                                 td.EXIT_CONFLICT)
     src_text = _read_source(a.source).decode("utf-8-sig")
     src = td.parse_test_cases(src_text)
     target_text = td.read_text(target) if target.is_file() else ""
@@ -125,7 +169,8 @@ def cmd_merge_cases(a) -> int:
     if skipped and not src.cases:
         td.emit({"ok": True, "added": [], "skippedExisting": skipped, "note": "Every draft case already exists; nothing to add"})
         return td.EXIT_OK
-    report = td.validation_report(src, td.validate_doc(src, existing, require_story_id=a.require_story_id))
+    report = td.validation_report(src, td.validate_doc(src, existing, require_story_id=a.require_story_id,
+                                                       story_id=a.story_id, foreign_ids=foreign))
     if not report["ok"]:
         td.emit({"ok": False, "error": {"code": "VALIDATION", "message": "Draft failed validation; nothing was written"},
                  **_summ(report)})
@@ -136,7 +181,7 @@ def cmd_merge_cases(a) -> int:
     res = td.safe_write(root, target, data, expect_sha=current_sha, allow_overwrite=current_sha is None, backup=True)
     final = td.parse_test_cases(merged)
     new_ids = {c.id for c in src.cases}
-    final_report = td.validation_report(final, td.validate_doc(final))
+    final_report = td.validation_report(final, td.validate_doc(final, foreign_ids=foreign))
     td.emit({"ok": True, **res, "added": [c.id for c in src.cases], "skippedExisting": skipped,
              "placement": placed, "userEditsDetected": user_edits,
              "totalCases": len(final.cases),
@@ -185,6 +230,119 @@ def cmd_replace_case(a) -> int:
     res = td.safe_write(root, target, (doc.newline.join(lines) + doc.newline).encode("utf-8"),
                         expect_sha=a.expect_sha256, backup=True)
     td.emit({"ok": True, **res, "replaced": a.id})
+    return td.EXIT_OK
+
+
+def _case_digest(doc: td.Doc) -> dict:
+    return {c.id: td.case_signature(c) for c in doc.cases if c.id}
+
+
+def cmd_regenerate_story_file(a) -> int:
+    """Replace one story's whole file with a freshly generated draft, only with consent (dry run by default)."""
+    root = Path(a.root)
+    target = td.confine(root, td.testcase_rel_path(a.story_id))
+    if not target.is_file():
+        raise td.SafeOpError("MISSING", f"{target.name} does not exist; save the story's first cases with merge-cases instead.",
+                             td.EXIT_MISSING)
+    old = td.parse_test_cases(td.read_text(target))
+    src = td.parse_test_cases(_read_source(a.source).decode("utf-8-sig"))
+    foreign = _foreign_ids(root, a.story_id)
+    report = td.validation_report(src, td.validate_doc(src, None, story_id=a.story_id, foreign_ids=foreign))
+    if not report["ok"]:
+        td.emit({"ok": False, "error": {"code": "VALIDATION", "message": "Draft failed validation; nothing was written"},
+                 **_summ(report)})
+        return td.EXIT_FINDINGS
+    current_sha = td.sha256_file(target)
+    edited = current_sha != a.expect_sha256
+    before, after = _case_digest(old), _case_digest(src)
+    diff = {"kept": sorted(i for i in after if i in before and before[i] == after[i]),
+            "changed": sorted(i for i in after if i in before and before[i] != after[i]),
+            "added": sorted(i for i in after if i not in before),
+            "removed": sorted(i for i in before if i not in after)}
+    summary = {"storyId": a.story_id, "file": td.testcase_rel_path(a.story_id), "userEditsDetected": edited,
+               "currentSha256": current_sha, "casesBefore": len(old.cases), "casesAfter": len(src.cases), **diff}
+    if not a.yes:
+        td.emit({"ok": True, "dryRun": True,
+                 "note": "Nothing was written. Show this to the user; repeat with --yes only after they agree.", **summary})
+        return td.EXIT_OK
+    if edited and not a.accept_user_edits:
+        td.emit({"ok": False, "error": {"code": "USER_EDITS", "message": f"{target.name} was edited since it was last recorded; "
+                 "regenerating would replace those edits (a backup is kept). Tell the user, and repeat with --accept-user-edits only "
+                 "if they agree. Nothing was written."}, **summary})
+        return td.EXIT_CONFLICT
+    data = (src.newline.join(src.lines) + src.newline).encode("utf-8")
+    res = td.safe_write(root, target, data, expect_sha=current_sha, backup=True)
+    td.emit({"ok": True, **res, **summary, "dryRun": False})
+    return td.EXIT_OK
+
+
+def cmd_split_legacy(a) -> int:
+    """Split the old consolidated test-cases.md into per-story files (dry run unless --yes)."""
+    root = Path(a.root)
+    legacy = td.confine(root, f"{td.OUTPUT_DIRNAME}/{td.TESTCASE_DIRNAME}/{td.LEGACY_TESTCASE_FILE}")
+    if not legacy.is_file():
+        raise td.SafeOpError("MISSING", f"There is no {td.LEGACY_TESTCASE_FILE} to split.", td.EXIT_MISSING)
+    doc = td.parse_test_cases(td.read_text(legacy))
+    problems: list[str] = []
+    if not doc.modules:
+        problems.append("the file has no '# Module' sections")
+    elif any(l.strip() for l in doc.lines[:doc.modules[0].line_idx]):
+        problems.append("there is text before the first '# Module' heading")
+    by_story: dict[str, list[td.ModuleSpan]] = {}
+    for m in doc.modules:
+        if not m.story_id:
+            problems.append(f"module '{m.name}' (line {m.line_idx + 1}) has no valid 'User Story ID:', so its cases cannot be attributed")
+        else:
+            by_story.setdefault(m.story_id, []).append(m)
+    for sid in by_story:
+        try:
+            rel = td.testcase_rel_path(sid)
+        except td.SafeOpError as e:
+            problems.append(str(e))
+            continue
+        if td.confine(root, rel).exists():
+            problems.append(f"{rel} already exists; it would not be overwritten")
+    if problems:
+        td.emit({"ok": False, "error": {"code": "CANNOT_SPLIT", "message": "The legacy file was not split and nothing was written. "
+                 "Resolve these first (add the missing 'User Story ID:' lines by hand, or move the existing files)."},
+                 "problems": problems})
+        return td.EXIT_CONFLICT
+    plan, outputs = [], {}
+    for sid, spans in by_story.items():
+        chunk: list[str] = []
+        for m in spans:
+            part = doc.lines[m.line_idx:m.end_idx]
+            while part and not part[-1].strip():
+                part.pop()
+            chunk += ([""] if chunk else []) + part
+        text = doc.newline.join(chunk) + doc.newline
+        plan.append({"storyId": sid, "file": td.testcase_rel_path(sid), "caseIds": [c.id for c in td.parse_test_cases(text).cases]})
+        outputs[sid] = text
+    n_split = sum(len(p["caseIds"]) for p in plan)
+    if n_split != len(doc.cases):
+        raise td.SafeOpError("SPLIT_MISMATCH", f"Splitting would keep {n_split} of {len(doc.cases)} cases; nothing was written.", td.EXIT_IO)
+    if not a.yes:
+        td.emit({"ok": True, "dryRun": True, "note": "Nothing was written. Show this to the user; repeat with --yes only after they agree. "
+                 "The old file is moved to state/backups/, not deleted.", "legacyCases": len(doc.cases), "files": plan})
+        return td.EXIT_OK
+    written, traceability_patch, workflow_patch = [], {}, {}
+    for p in plan:
+        sid = p["storyId"]
+        res = td.safe_write(root, td.testcase_rel_path(sid), outputs[sid].encode("utf-8"), backup=False)
+        written.append({"storyId": sid, "file": p["file"], "sha256": res["sha256"], "caseCount": len(p["caseIds"])})
+        traceability_patch[sid] = {"testCaseFile": p["file"]}
+        workflow_patch[sid] = {"testCaseFile": {"path": p["file"], "sha256": res["sha256"], "caseCount": len(p["caseIds"]),
+                                                "updatedAt": td.utc_now()}}
+    bdir = td.output_dir(root) / "state" / "backups"
+    bdir.mkdir(parents=True, exist_ok=True)
+    stamp = td._dt.datetime.now(td._dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    kept = bdir / f"{td.LEGACY_TESTCASE_FILE}.{stamp}.migrated.bak"
+    td.shutil.copy2(legacy, kept)
+    if td.sha256_file(kept) != td.sha256_file(legacy):
+        raise td.SafeOpError("READBACK_FAILED", "The backup of the legacy file does not match; it was left in place.", td.EXIT_IO)
+    legacy.unlink()
+    td.emit({"ok": True, "dryRun": False, "files": written, "legacyBackup": str(kept),
+             "traceabilityPatch": {"stories": traceability_patch}, "workflowPatch": {"stories": workflow_patch}})
     return td.EXIT_OK
 
 
@@ -292,7 +450,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--on-conflict", choices=["fail", "skip"], default="fail")
     p.add_argument("--require-story-id", action="store_true",
                    help="reject a draft whose module sections lack a 'User Story ID:' line")
+    p.add_argument("--story-id", help="target must be <S>-testcase.md and the draft may hold only story S (implies --require-story-id)")
+    p.add_argument("--adopt-existing", action="store_true",
+                   help="with --story-id and no --expect-sha256: append to a file this run never recorded (only after the user agreed)")
     p.set_defaults(fn=cmd_merge_cases)
+
+    p = sub.add_parser("regenerate-story-file")
+    p.add_argument("--root", required=True)
+    p.add_argument("--story-id", required=True)
+    p.add_argument("--source", required=True)
+    p.add_argument("--expect-sha256", required=True, help="the hash recorded for the file; a different current hash means user edits")
+    p.add_argument("--yes", action="store_true", help="write the file (omit for a dry run that only reports the differences)")
+    p.add_argument("--accept-user-edits", action="store_true", help="also required when the file was edited since it was recorded")
+    p.set_defaults(fn=cmd_regenerate_story_file)
+
+    p = sub.add_parser("split-legacy")
+    p.add_argument("--root", required=True)
+    p.add_argument("--yes", action="store_true")
+    p.set_defaults(fn=cmd_split_legacy)
 
     p = sub.add_parser("replace-case")
     p.add_argument("--root", required=True)

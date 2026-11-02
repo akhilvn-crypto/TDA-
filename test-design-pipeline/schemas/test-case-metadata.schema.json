@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Test case traceability metadata",
-  "description": "One entry of traceability.json 'cases', keyed by test case ID. Internal metadata; never written into test-cases.md.",
+  "description": "One entry of traceability.json 'cases', keyed by test case ID. Internal metadata; never written into a test-case file.",
   "type": "object",
   "required": ["title", "storyIds"],
   "additionalProperties": false,

@@ -22,6 +22,9 @@ from typing import Any, Optional
 
 SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"
 OUTPUT_DIRNAME = "test-design"
+TESTCASE_DIRNAME = "test-cases"
+TESTCASE_SUFFIX = "-testcase.md"          # one file per user story: <USER_STORY_ID>-testcase.md
+LEGACY_TESTCASE_FILE = "test-cases.md"    # the consolidated file written by plugin versions before 0.5.0
 
 # Exit codes shared by every script.
 EXIT_OK, EXIT_FINDINGS, EXIT_USAGE, EXIT_CONFLICT, EXIT_MISSING, EXIT_CONFINED, EXIT_IO = 0, 1, 2, 3, 4, 5, 6
@@ -594,15 +597,29 @@ def case_signature(case: Case) -> str:
 
 
 def validate_doc(doc: Doc, existing: Optional[Doc] = None, external_ids: Optional[set[str]] = None,
-                 require_story_id: bool = False) -> list[Finding]:
+                 require_story_id: bool = False, story_id: Optional[str] = None,
+                 foreign_ids: Optional[dict[str, str]] = None) -> list[Finding]:
     """Structural and mechanical-quality checks (rule list in rules/test-case-format.md).
 
     ``existing`` is a parsed copy of cases already saved: its IDs are valid dependency
     targets, and its titles/scenarios are checked for duplicates. ``User Story ID:`` is
     optional so files written before the field existed stay valid; ``require_story_id``
     (used for newly generated drafts) makes a module without a valid one an error.
+
+    Per-story files: ``story_id`` asserts that the file holds only that story's cases (and implies
+    ``require_story_id``). ``foreign_ids`` maps test IDs that belong to *other* stories' files to
+    that story: reusing one is a ``DUPLICATE_ID``, and depending on one is ``DEPENDENCY_CROSS_FILE``,
+    because every file must be usable on its own.
     """
     out: list[Finding] = list(doc.findings)
+    foreign_ids = foreign_ids or {}
+    if story_id:
+        require_story_id = True
+        for m in doc.modules:
+            if m.story_id and m.story_id != story_id:
+                out.append(Finding("FILE_STORY_MISMATCH", "error",
+                                   f"Module '{m.name}' is for story {m.story_id}, but this file holds only {story_id}",
+                                   m.story_line_idx + 1 if m.story_line_idx is not None else m.line_idx + 1))
     if require_story_id:
         for m in doc.modules:
             # a present-but-bad line already produced its own STORY_ID_* finding
@@ -649,6 +666,9 @@ def validate_doc(doc: Doc, existing: Optional[Doc] = None, external_ids: Optiona
             seen_ids.setdefault(cid, c.line)
             if cid in existing_ids:
                 add("DUPLICATE_ID", "error", f"ID {cid} already exists in the saved test cases")
+            if cid in foreign_ids:
+                add("DUPLICATE_ID", "error",
+                    f"ID {cid} is already used by a test case of story {foreign_ids[cid]}; IDs are unique across all files")
 
         # structure
         if "Steps" not in c.sections:
@@ -735,6 +755,10 @@ def validate_doc(doc: Doc, existing: Optional[Doc] = None, external_ids: Optiona
                 add("DEPENDENCY_FORMAT", "error", f"'{dep}' is not a valid test ID", c.field_lines.get("Depends on"))
             elif dep == cid:
                 add("DEPENDENCY_SELF", "error", "A test case cannot depend on itself", c.field_lines.get("Depends on"))
+            elif dep in foreign_ids and dep not in known_ids:
+                add("DEPENDENCY_CROSS_FILE", "error",
+                    f"Dependency {dep} belongs to story {foreign_ids[dep]}'s file. Each file must be usable on its own: "
+                    "put the setup in Preconditions or in this story's own cases", c.field_lines.get("Depends on"))
             elif dep not in known_ids:
                 add("DEPENDENCY_UNKNOWN", "error", f"Dependency {dep} does not exist", c.field_lines.get("Depends on"))
 
@@ -865,6 +889,43 @@ def fix_safe(text: str) -> tuple[str, list[str]]:
     if new != text and not fixes:
         fixes.append("normalised line endings / final newline")
     return new, sorted(set(fixes))
+
+
+# --------------------------------------------------------------------------- per-story files
+
+def testcase_filename(story_id: str) -> str:
+    """``US-001`` -> ``US-001-testcase.md``. Refuses anything that is not a safe file-name stem."""
+    if not STORY_ID_RE.match(story_id or "") or ".." in story_id:
+        raise SafeOpError("BAD_STORY_ID", f"Story ID '{story_id}' cannot be used as a test-case file name "
+                          "(letters, digits, '.', '_' and '-' only).", EXIT_USAGE)
+    return story_id + TESTCASE_SUFFIX
+
+
+def testcase_rel_path(story_id: str) -> str:
+    """Project-root-relative path of a story's test-case file."""
+    return f"{OUTPUT_DIRNAME}/{TESTCASE_DIRNAME}/{testcase_filename(story_id)}"
+
+
+def story_id_from_filename(name: str) -> Optional[str]:
+    """``US-001-testcase.md`` -> ``US-001``; None for any other name (including the legacy file)."""
+    if not name.endswith(TESTCASE_SUFFIX):
+        return None
+    stem = name[:-len(TESTCASE_SUFFIX)]
+    return stem if STORY_ID_RE.match(stem) and ".." not in stem else None
+
+
+def foreign_case_ids(trace: Optional[dict], story_id: str) -> dict[str, str]:
+    """Test IDs that traceability.json maps to stories other than ``story_id`` (id -> that story).
+
+    This is the cheap index used to keep IDs unique across files without opening any other file.
+    """
+    out: dict[str, str] = {}
+    cases = trace.get("cases", {}) if isinstance(trace, dict) and isinstance(trace.get("cases"), dict) else {}
+    for cid, meta in cases.items():
+        sids = meta.get("storyIds", []) if isinstance(meta, dict) else []
+        if sids and story_id not in sids:
+            out[cid] = sids[0]
+    return out
 
 
 # --------------------------------------------------------------------------- merge helpers

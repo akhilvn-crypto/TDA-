@@ -29,6 +29,19 @@
             "enum": ["pending", "analysing", "designing", "generating", "validating", "saved", "skipped", "needs_clarification", "failed"]
           },
           "sourceFile": { "type": "string" },
+          "testCaseFile": {
+            "description": "This story's own test-case file (test-design/test-cases/<USER_STORY_ID>-testcase.md), recorded after each save. sourceSha256 is the story fingerprint the cases were generated from, which is how a changed story marks only its own file as stale.",
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string" },
+              "caseCount": { "type": "integer", "minimum": 0 },
+              "sourceSha256": { "type": "string" },
+              "updatedAt": { "type": "string" }
+            }
+          },
           "testCaseIds": { "type": "array", "items": { "type": "string" } },
           "validation": {
             "type": "object",
@@ -108,13 +121,17 @@
       "additionalProperties": false,
       "properties": {
         "testCases": {
+          "description": "The test-cases folder. Each story's file, hash and case count are recorded on the story (stories.<id>.testCaseFile). path and sha256 are kept only for runs made before one file per story, where they describe the old consolidated test-cases.md.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "path": { "type": "string" },
-            "sha256": { "type": "string" },
+            "directory": { "type": "string" },
+            "fileNamePattern": { "type": "string" },
+            "fileCount": { "type": "integer", "minimum": 0 },
             "caseCount": { "type": "integer", "minimum": 0 },
-            "updatedAt": { "type": "string" }
+            "updatedAt": { "type": "string" },
+            "path": { "type": "string" },
+            "sha256": { "type": "string" }
           }
         },
         "traceability": {

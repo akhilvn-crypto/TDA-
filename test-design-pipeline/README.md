@@ -1,6 +1,6 @@
 # Test Design Pipeline
 
-A Claude plugin that turns Markdown user stories into **automation-ready test cases**. It analyses each story in its own isolated agent session, one at a time, designs coverage with the right techniques, writes concise test cases in a fixed Markdown format, keeps story-to-test traceability, and saves everything locally so an interrupted run can be resumed safely.
+A Claude plugin that turns Markdown user stories into **automation-ready test cases**. It analyses each story in its own isolated agent session, one at a time, designs coverage with the right techniques, writes concise test cases in a fixed Markdown format, keeps story-to-test traceability, and saves one test-case file per user story, and keeps everything local so an interrupted run can be resumed safely.
 
 Test Design decides **what to validate**. The downstream Automation Builder decides how to automate and run it. This plugin does not repeat BA gap analysis, edit your stories, or write Playwright code.
 
@@ -37,14 +37,14 @@ To try it from a local checkout without installing: `claude --plugin-dir ./test-
 
 1. **Pick the stories.** A file, a directory, or a name. If several files match you choose which to process. Only `.md` is supported. The story folder is the default project root and you confirm the output location before anything is written.
 2. **Per story:** analyse (in a fresh, isolated worker), design coverage, generate cases, validate, save. You see one progress line per story, and a question only when something blocks reliable test design (for example a limit the story mentions but never states).
-3. **Summary:** stories processed, cases generated, validation issues, output location, and the `env:` variables you need to provide.
+3. **Summary:** stories processed, test-case files and cases generated, validation issues, output location, and the `env:` variables you need to provide.
 
 | Command | What it does |
 |---|---|
 | `/test-design-pipeline:start [path]` | Run the workflow. Offers to resume if a run exists in that project |
-| `/test-design-pipeline:status` | Phase, per-story progress, case counts, and whether your stories changed since generation (read-only) |
-| `/test-design-pipeline:resume` | Continue the last incomplete run. Asks before touching anything affected by changed stories |
-| `/test-design-pipeline:validate` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability. Changes nothing without your approval |
+| `/test-design-pipeline:status` | Phase, per-story progress, files and case counts, and which story files are stale because their story changed (read-only) |
+| `/test-design-pipeline:resume` | Continue the last incomplete run. Asks, story by story, before touching a file affected by a changed story |
+| `/test-design-pipeline:validate [root] [story]` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability, for every story file or one story's. Changes nothing without your approval |
 
 ## Isolated story analysis
 
@@ -55,7 +55,7 @@ Every story is analysed by its **own fresh `story-analyser` invocation**, so one
 - **Minimal input.** A worker receives only: `run_id`, `story_id`, `story_content` (that story alone), `relevant_shared_rules` (only rules the story needs), `dependency_context` (a small read-only excerpt of a story it explicitly names, only where needed), `analysis_instructions` and `output_schema_version`. It never gets the workflow state, the source document, other stories, earlier analyses, generated cases or any transcript. `story-analysis-state.py begin` builds this input and refuses one that holds more than one story, unexpected fields or a secret.
 - **Structured result.** The worker returns one compact JSON object (`schemas/story-analysis.schema.json`, version 2) and finishes: `story_id`, `story_summary`, `behaviour_to_validate`, `acceptance_criteria_interpretation`, `business_rules`, `preconditions`, `dependencies`, `relevant_non_functional_expectations`, `test_design_considerations`, `ambiguities`, `analysis_complete`. It is an internal handoff to coverage design, not a report, and is never written into your story file.
 - **Validated before use.** `story-analysis-state.py complete` checks the result (schema, matching story ID, complete, unique labels, no secrets). An invalid or partial result is never passed to coverage design: the story is marked `failed`, the orchestrator retries it once in another fresh worker, and a second failure leaves it for `/test-design-pipeline:resume` to retry on its own. The orchestrator never falls back to analysing stories in its own context.
-- **Checkpoints and resume.** Per story, `workflow.json` records the analysis status (`not_started`, `in_progress`, `completed`, `failed`), the story fingerprint, the fingerprints of the shared rules and dependency excerpts used, and the last completed stage; the result is saved in `state/analysis/<story-id>.json`. Resume reuses a completed analysis only while those fingerprints are unchanged. A changed story, a changed shared rule or a changed dependency invalidates only the analyses that used it. Existing test cases are never regenerated without your explicit yes.
+- **Checkpoints and resume.** Per story, `workflow.json` records the analysis status (`not_started`, `in_progress`, `completed`, `failed`), the story fingerprint, the fingerprints of the shared rules and dependency excerpts used, and the last completed stage; the result is saved in `state/analysis/<story-id>.json`. Resume reuses a completed analysis only while those fingerprints are unchanged. A changed story, a changed shared rule or a changed dependency invalidates only the analyses that used it. Existing test cases and files are never regenerated without your explicit yes.
 - **Shared rules (optional).** If your stories rely on a project-level rules file (Markdown, one rule per heading), name it when you confirm the sources; it is stored as `sharedRulesFile`. Each worker gets only the rules that apply to its story, and editing a rule invalidates only the stories that used it.
 - **Audit evidence.** `audit.jsonl` records `analysis_started`, `analysis_completed`, `analysis_failed` and `analysis_invalidated` (IDs and counts only). `story-analysis-state.py check-audit` verifies from it that workers ran one at a time and that no worker session served two stories. Worker transcripts are not stored.
 
@@ -67,17 +67,31 @@ Everything goes under the project root you confirm. Your story files are never m
 
 ```text
 <project-root>/test-design/
-├── test-cases/test-cases.md       # the single consolidated file the Automation Builder reads
+├── test-cases/
+│   ├── US-001-testcase.md         # one file per user story: only that story's cases
+│   ├── US-002-testcase.md         # <USER_STORY_ID>-testcase.md, all directly in this folder
+│   └── ...                        # any one file can be handed to the Automation Builder on its own
 └── state/
-    ├── workflow.json              # checkpoint: phase, per-story status and analysis checkpoint, hashes
+    ├── workflow.json              # checkpoint: phase, per-story status, analysis checkpoint, each story's file + hash
     ├── analysis/<story-id>.json   # validated structured story analysis (internal handoff, no transcripts)
-    ├── traceability.json          # which stories each case verifies (kept out of the Markdown)
+    ├── traceability.json          # which stories each case verifies, and each story's file (kept out of the Markdown)
     ├── source-fingerprints.json   # story hashes for change detection
     ├── audit.jsonl                # event history
     └── backups/                   # copies of anything the plugin replaced
 ```
 
 There is no approval queue: cases that pass validation are saved directly. Cases that cannot be validated are not saved, and the summary tells you why.
+
+## One file per story
+
+Each story gets `test-design/test-cases/<USER_STORY_ID>-testcase.md` (`US-001-testcase.md`, `PROJ-123-testcase.md`). The Markdown format, IDs and validation rules are exactly the ones below; the only change is where the cases live.
+
+- **Only its own story.** Every module in a file carries that story's `User Story ID:`. The validator (`--story-id`) rejects a file that holds anything else, and `merge-cases --story-id` only writes to the story's own file name.
+- **Self-contained.** A case may depend only on cases in the same file (`DEPENDENCY_CROSS_FILE` otherwise; put cross-story setup in Preconditions), so the Automation Builder can consume any one file without the others. Test IDs are unique across all files; this is checked from `traceability.json`, so saving one story never opens another story's file.
+- **Handing a file to the Automation Builder.** Point it at the file for the story you want, for example `test-design/test-cases/US-001-testcase.md`. Nothing else from `test-design/` is needed.
+- **A changed story regenerates only its own file.** `status` and `resume` compare each story with the fingerprint recorded when its file was generated (`stories.<id>.testCaseFile.sourceSha256`) and list the stale files. For each one you choose keep, regenerate or skip. Regenerating shows a dry run (case IDs kept / changed / added / removed) first, replaces the file only after your yes, asks again if you had hand-edited it, and keeps a backup. Unchanged scenarios keep their IDs. Other stories' files are not read or written.
+- **Existing files are never silently overwritten.** Saving appends to the story's file and leaves existing bytes alone. If `<story>-testcase.md` already exists but was not recorded by the run, you are asked before anything is appended.
+- **Older output.** A run made before 0.5.0 has one consolidated `test-cases.md`. It keeps working and is never modified on its own; `validate` flags it, and `safe-file-operations.py split-legacy` (dry run first, then `--yes`) splits it into per-story files using each module's `User Story ID:` and moves the old file to `state/backups/`.
 
 ## Test-case format
 
@@ -117,9 +131,9 @@ Tags: smoke, auth
 ## Safety
 
 - Source stories are read-only; all writes are confined to `<root>/test-design/` and checked by the scripts.
-- Saving *appends* validated cases to the end of their module and leaves the rest of the file byte-for-byte unchanged, so hand edits survive. Replacing an existing case needs your explicit yes and keeps a backup.
+- Saving *appends* validated cases to the end of their module in the story's own file and leaves the rest of the file byte-for-byte unchanged, so hand edits survive. Replacing an existing case, or regenerating a whole story file, needs your explicit yes and keeps a backup.
 - Writes use a temp file, atomic replace and a read-back hash check.
-- If a story changes after generation, `status` and `resume` show which cases are linked to it and ask what to do. Nothing is regenerated automatically.
+- If a story changes after generation, `status` and `resume` show which story file and cases are linked to it and ask what to do. Nothing is regenerated automatically, and only that story's file is ever regenerated.
 - Missing or corrupt state is reported, never assumed complete.
 - If Python is missing the plugin explains why it is needed and asks before installing anything.
 
@@ -146,7 +160,7 @@ tests/                       unittest suite and fixtures
 ## Develop and test
 
 ```bash
-python -m unittest discover -s tests -t tests      # 189 tests, standard library only
+python -m unittest discover -s tests -t tests      # 292 tests, standard library only
 claude plugin validate ./test-design-pipeline               # manifest and component check
 ```
 
@@ -154,7 +168,8 @@ Scripts can be run by hand; each prints JSON:
 
 ```bash
 python scripts/discover-story-files.py docs/stories
-python scripts/validate-test-cases.py test-design/test-cases/test-cases.md
+python scripts/validate-test-cases.py test-design/test-cases/US-001-testcase.md --story-id US-001 --check-file-name
+python scripts/validate-test-cases.py --dir test-design/test-cases       # every story file + cross-file rules
 python scripts/generate-stable-id.py --story US-001 --title "Valid user can sign in"
 python scripts/story-analysis-state.py plan --root .    # which story analyses would be reused or rerun
 ```

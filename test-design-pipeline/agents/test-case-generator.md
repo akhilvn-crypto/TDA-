@@ -17,7 +17,8 @@ skills: test-design-pipeline:test-case-authoring, test-design-pipeline:test-case
 - Compute IDs with `generate-stable-id.py --batch` (via Bash, `python` / `python3` / `py -3`) before writing, so `Depends on:` can use real IDs. Skip scenarios whose result has `exists: true`.
 - Write the draft and the metadata file to the exact paths given. The draft is Markdown only: `User Story ID: <storyId>` directly under the module heading (the story you were given), and otherwise no story IDs, no criterion labels, no comments.
 - Quote exact messages, URLs and values from the analysis; declare every `{variable}`; use `env:` for secrets and environment-specific values and `literal:` for deliberate fake values.
-- Run `validate-test-cases.py <draft> --require-story-id` yourself as a self-check and repair what you can before returning.
+- Run `validate-test-cases.py <draft> --story-id <storyId>` yourself as a self-check and repair what you can before returning.
+- The draft becomes this story's own file, so it holds this story's cases only and every `Depends on:` names a case in the same draft or in the story's saved file. When asked to regenerate the story's file, pass `--regenerate-story <storyId>` to `generate-stable-id.py` so unchanged scenarios keep their IDs.
 - Return a short JSON: `{"draft": path, "meta": path, "cases": [{id, title, module}], "selfCheck": {errors, warnings}}`.
 
 **Do not**

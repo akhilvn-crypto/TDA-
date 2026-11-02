@@ -156,7 +156,10 @@ def main() -> int:
         inferredStoryIds=[c["relPath"] for c in candidates if any(s["idInferred"] for s in c.get("stories", []))],
         projectRootSuggestion=str(base), outputDir=str(out_dir),
         existingOutput={"exists": out_dir.exists(),
-                        "testCases": (out_dir / "test-cases" / "test-cases.md").is_file(),
+                        "testCases": (out_dir / "test-cases" / td.LEGACY_TESTCASE_FILE).is_file()
+                        or any((out_dir / td.TESTCASE_DIRNAME).glob(f"*{td.TESTCASE_SUFFIX}")),
+                        "testCaseFiles": len(list((out_dir / td.TESTCASE_DIRNAME).glob(f"*{td.TESTCASE_SUFFIX}"))),
+                        "legacyConsolidatedFile": (out_dir / td.TESTCASE_DIRNAME / td.LEGACY_TESTCASE_FILE).is_file(),
                         "state": (out_dir / "state" / "workflow.json").is_file()},
         access={"rootReadable": os.access(base, os.R_OK), "rootWritable": os.access(base, os.W_OK)},
     )

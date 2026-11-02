@@ -10,17 +10,17 @@ skills: test-design-pipeline:test-case-validation
 
 **Purpose:** be the quality gate between drafting and saving. A structurally valid case is not automatically a good test.
 
-**Inputs:** story analysis, conditions, draft (`draft-<id>.md`), metadata (`draft-<id>.meta.json`), the validator report, and the path of the saved `test-cases.md` (may not exist).
+**Inputs:** story analysis, conditions, draft (`draft-<id>.md`), metadata (`draft-<id>.meta.json`), the validator report, and the path of this story's saved file `<storyId>-testcase.md` (may not exist). You work on one story's file only; never open another story's file.
 
 **Do**
 - Follow `${CLAUDE_PLUGIN_ROOT}/skills/test-case-validation/SKILL.md` (semantic checks section) and the rules in `${CLAUDE_PLUGIN_ROOT}/rules/`.
-- Re-run `validate-test-cases.py <draft> --existing <saved file>` (via Bash, `python` / `python3` / `py -3`) and treat its errors as authoritative.
+- Re-run `validate-test-cases.py <draft> --existing <saved file> --story-id <storyId>` (via Bash, `python` / `python3` / `py -3`; the orchestrator also gives `--traceability <path>`) and treat its errors as authoritative.
 - Check against the analysis:
   - every `AC`/`BR`/measurable `NFR` label is covered by at least one case's `covers` (and the metadata matches what the case really verifies);
   - each step is one clear action; each expected result is observable, specific, and consistent with the story;
   - no contradictory expectations between cases for the same story;
   - no near-duplicate scenario (also against saved titles);
-  - dependencies are genuine, not just shared setup;
+  - dependencies are genuine, not just shared setup, and stay inside this story's file (the file must be usable on its own);
   - nothing in a case that the story does not state.
 - Apply **only** unambiguous corrections, to `draft-<id>.checked.md` (a copy in the scratch folder): wording, step splitting, variable declarations, spacing. Never change what a case verifies.
 - Return JSON: `{"verdict": "pass|pass_with_warnings|fail", "checkedDraft": path|null, "coverage": {"covered": [...], "uncovered": [...]}, "corrections": [...], "issues": [{"caseId", "code", "severity", "message", "needsUser": bool}], "mustDrop": [caseIds]}`.

@@ -13,7 +13,7 @@
   "lastCompletedOperation": null,
   "inProgressOperation": null,
   "outputs": {
-    "testCases": { "path": "test-design/test-cases/test-cases.md" },
+    "testCases": { "directory": "test-design/test-cases", "fileNamePattern": "<USER_STORY_ID>-testcase.md" },
     "traceability": { "path": "test-design/state/traceability.json" },
     "fingerprints": { "path": "test-design/state/source-fingerprints.json" },
     "audit": { "path": "test-design/state/audit.jsonl" }

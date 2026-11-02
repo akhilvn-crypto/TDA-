@@ -6,7 +6,7 @@ user-invocable: false
 
 # Test coverage design
 
-Input: the validated story analysis (`acceptance_criteria_interpretation` `AC-n`, `business_rules` `BR-n`, `relevant_non_functional_expectations` `NFR-n`, `messages`, `preconditions`, `test_design_considerations`; schema `schemas/story-analysis.schema.json`) plus the list of scenarios already saved for the same story or module (titles only). Output: a list of test conditions. Not saved; the authoring step turns each into a case.
+Input: the validated story analysis (`acceptance_criteria_interpretation` `AC-n`, `business_rules` `BR-n`, `relevant_non_functional_expectations` `NFR-n`, `messages`, `preconditions`, `test_design_considerations`; schema `schemas/story-analysis.schema.json`) plus the list of scenarios already saved for the same story (titles only, from its own file). Output: a list of test conditions. Not saved; the authoring step turns each into a case.
 
 ## Choose techniques by what the story contains
 
@@ -29,7 +29,7 @@ Do not apply a technique the story gives no basis for. Boundaries need a stated 
 2. Derive conditions. Each: `{condition, technique, covers: ["US-001#AC-1"], priority?, dependsOn?}`.
    - `covers` uses the story ID and label from the analysis. A condition can cover several labels; a label can need several conditions (boundaries).
    - `priority` only when meaningful: Critical (security, data loss, money), High (core journey), Medium, Low.
-   - `dependsOn` only when a case genuinely cannot run without another having run first (for example "edit profile" needs the profile created by an earlier case). Prefer independent cases with their own Preconditions; shared setup is not a dependency.
+   - `dependsOn` only when a case genuinely cannot run without another **case of the same story** having run first (for example "edit profile" needs the profile created by an earlier case). Prefer independent cases with their own Preconditions; shared setup is not a dependency, and a prerequisite owned by another story is a precondition, never a dependency, because each story's file must be usable alone.
 3. **Remove duplication.** Drop a condition if a saved or already-listed scenario has the same preconditions, data and outcome. Merge conditions that differ only in wording. Keep boundary conditions even when they look similar: different data on a different side of a limit is a different scenario.
 4. **Check coverage.** Every `AC`, `BR`, and measurable `NFR` label must appear in at least one `covers`. A label you cannot cover (not observable, needs missing information) goes in `uncovered` with a reason; never pad with a vague case.
 5. Return JSON: `{"storyId": "...", "conditions": [...], "uncovered": [{"label": "...", "reason": "..."}]}`.

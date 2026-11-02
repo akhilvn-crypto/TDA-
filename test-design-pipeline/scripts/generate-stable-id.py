@@ -2,7 +2,7 @@
 """Derive deterministic ``AUTO-xxxxxxxx`` IDs for test cases that have no supplied ID.
 
     generate-stable-id.py --story US-001 --title "Valid user can sign in"
-    generate-stable-id.py --batch cases.json [--traceability traceability.json]
+    generate-stable-id.py --batch cases.json [--traceability traceability.json] [--regenerate-story S]
 
 The scenario key is the sorted source story IDs plus the normalised title (case, spacing and
 punctuation are ignored), so the same scenario always gets the same ID. Once written into a
@@ -10,6 +10,9 @@ test-case heading the ID is never recomputed, so renaming a case later does not 
 ``--batch`` reads ``[{"storyIds": ["US-001"], "title": "..."}]`` and prints one result per entry.
 With ``--traceability``, an ID already used by the same scenario is reported as ``exists`` and an
 ID already used by a different scenario is re-derived with a deterministic salt.
+``--regenerate-story S`` is for rebuilding story S's test-case file: the IDs S already owns are not treated as
+taken, so an unchanged scenario gets its old ID back (``exists`` is false and the ID is reused); IDs of other
+stories stay taken.
 """
 from __future__ import annotations
 
@@ -47,6 +50,8 @@ def main() -> int:
     ap.add_argument("--title")
     ap.add_argument("--batch", help="JSON file with a list of {storyIds, title}")
     ap.add_argument("--traceability", help="traceability.json whose case IDs must not be reused")
+    ap.add_argument("--regenerate-story", metavar="S",
+                    help="with --traceability: IDs mapped to story S may be reused (its file is being regenerated)")
     args = ap.parse_args()
 
     taken: dict[str, str] = {}
@@ -57,7 +62,8 @@ def main() -> int:
                 data = json.loads(td.read_text(p))
             except ValueError:
                 raise td.fail("STATE_CORRUPT", "traceability.json is not valid JSON", td.EXIT_MISSING)
-            taken = {cid: m.get("scenarioKey", "") for cid, m in data.get("cases", {}).items()}
+            taken = {cid: m.get("scenarioKey", "") for cid, m in data.get("cases", {}).items()
+                     if not (args.regenerate_story and args.regenerate_story in m.get("storyIds", []))}
 
     if args.batch:
         try:

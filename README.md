@@ -4,7 +4,7 @@ This repository is a Claude Code **plugin marketplace** (`tda`). It currently sh
 
 | Plugin | Version | What it does |
 |---|---|---|
-| [`test-design-pipeline`](test-design-pipeline/README.md) | 0.4.0 | Turns Markdown user stories into automation-ready, traceable test cases |
+| [`test-design-pipeline`](test-design-pipeline/README.md) | 0.5.0 | Turns Markdown user stories into automation-ready, traceable test cases |
 
 Test Design decides **what to validate**. A downstream automation tool decides how to automate and run it. The plugin does not edit your stories, repeat BA gap analysis, or write Playwright code.
 
@@ -97,14 +97,14 @@ claude plugin install test-design-pipeline@tda
 /test-design-pipeline:start docs/stories/login.md    # a single file
 ```
 
-You get a consolidated `test-design/test-cases/test-cases.md` in your project, plus resumable state under `test-design/state/`. Your story files are never modified.
+You get one test-case file per user story, `test-design/test-cases/<USER_STORY_ID>-testcase.md` (for example `US-001-testcase.md`), in your project, plus resumable state under `test-design/state/`. Your story files are never modified.
 
 | Command | Purpose |
 |---|---|
 | `/test-design-pipeline:start [path]` | Run the full workflow. Offers to resume if a run already exists |
 | `/test-design-pipeline:status [root]` | Read-only: phase, per-story progress, case counts, whether stories changed since generation |
 | `/test-design-pipeline:resume [root]` | Continue an interrupted run; asks before touching anything affected by changed stories |
-| `/test-design-pipeline:validate [root]` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability |
+| `/test-design-pipeline:validate [root] [story]` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability, for every story file or just one |
 
 ---
 
@@ -133,13 +133,13 @@ You get a consolidated `test-design/test-cases/test-cases.md` in your project, p
  │  B. Design     test-coverage-designer → test conditions       │
  │  C. Generate   test-case-generator → draft cases + metadata   │
  │  D. Validate   scripts + test-case-quality-checker (≤2 repairs)│
- │  E. Save       traceability first, then append to test-cases.md│
+ │  E. Save       traceability first, then append to <story>-testcase.md│
  │                                                               │
  │  checkpoint before and after every step                       │
  └────────────┬─────────────────────────────────────────────────┘
               ▼
  ┌─────────────────────────┐
- │ Phase 5  Finalise        │  audit check, whole-file validation, source-drift check,
+ │ Phase 5  Finalise        │  audit check, folder validation, source-drift check,
  │                          │  summary + list of env: variables you must provide
  └─────────────────────────┘
 ```
@@ -150,7 +150,7 @@ You get a consolidated `test-design/test-cases/test-cases.md` in your project, p
 | **B. Design coverage** | `test-coverage-designer` | Chooses the fewest scenarios that still give meaningful coverage, using positive/negative, boundary, equivalence partitioning, decision table, state transition, end-to-end and non-functional techniques. Drops duplicates of already-saved cases |
 | **C. Generate** | `test-case-generator` | Writes cases in the fixed Markdown format with stable `AUTO-xxxxxxxx` IDs (or your own IDs if stories supply them) |
 | **D. Validate** | `validate-test-cases.py` + `test-case-quality-checker` | Format, IDs, data, dependencies and expected results are checked; formatting-only issues are auto-fixed; other errors go back for repair or are dropped with a reason. A case that fails validation is **never saved** |
-| **E. Save** | `safe-file-operations.py` | Writes `traceability.json` first (so a crash never loses the mapping), then appends the cases to `test-cases.md` atomically with hash checks. Hand edits survive |
+| **E. Save** | `safe-file-operations.py` | Writes `traceability.json` first (so a crash never loses the mapping), then appends the cases to that story's own `<USER_STORY_ID>-testcase.md` atomically with hash checks. Hand edits survive |
 
 Nothing is invented: limits, messages or expected results the story does not state are either asked about or left out and reported.
 
@@ -166,8 +166,8 @@ Each story is analysed by its **own fresh agent session**, one at a time, so one
         ├─ saved & unchanged ........... left alone
         ├─ incomplete / failed ......... re-run only these (fresh workers)
         ├─ completed analysis, unchanged reused without calling a worker
-        └─ story / shared rule changed . ASK: keep, review & update, or skip
-                                          (never regenerated automatically)
+        └─ story / shared rule changed . ASK per story: keep, regenerate that story's
+                                          file (dry run first), or skip. Never automatic
 ```
 
 Missing or corrupt state is reported, never assumed complete.
@@ -178,7 +178,7 @@ Read-only. Shows run status, a per-story table (status, analysis, cases, validat
 
 ### 5. Validate flow (`validate`)
 
-Runs the case and traceability validators over the saved files, groups findings by code with case IDs, and flags stories or criteria with no case. Changes nothing unless you approve a safe, formatting-only fix (a backup is kept).
+Runs the case and traceability validators over the saved files (all of them, or one story's file), groups findings by code with file and case IDs, and flags stories or criteria with no case, IDs used in two files and dependencies that cross files. Changes nothing unless you approve a safe, formatting-only fix (a backup is kept).
 
 ---
 
@@ -186,7 +186,9 @@ Runs the case and traceability validators over the saved files, groups findings 
 
 ```text
 <your-project>/test-design/
-├── test-cases/test-cases.md       # consolidated test cases (the handoff file)
+├── test-cases/
+│   ├── US-001-testcase.md         # only story US-001's cases (a self-contained handoff file)
+│   └── US-002-testcase.md         # one file per story, flat in this folder
 └── state/
     ├── workflow.json              # checkpoint: phase, per-story status, hashes
     ├── analysis/<story-id>.json   # validated per-story analysis (no transcripts)
@@ -201,7 +203,7 @@ Runs the case and traceability validators over the saved files, groups findings 
 ## Safety guarantees
 
 - Story files are read-only; all writes stay inside `<root>/test-design/`.
-- Existing cases are never overwritten or regenerated without an explicit yes (a backup is kept).
+- Existing cases and story files are never overwritten or regenerated without an explicit yes (a backup is kept). A changed story regenerates only its own file.
 - Writes are atomic (temp file → replace → hash read-back).
 - If Python is missing, the plugin explains why and asks before installing anything.
 
