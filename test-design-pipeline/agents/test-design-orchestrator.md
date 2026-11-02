@@ -1,9 +1,9 @@
 ---
 name: test-design-orchestrator
-description: Owns the Test Design workflow end to end - asks where the stories are, confirms sources and project root, coordinates story analysis, coverage design, generation and validation one story at a time, checkpoints state, saves validated cases, resumes safely, and reports progress. Runs in the main conversation (the slash commands load this contract); can also be started with `claude --agent test-design:test-design-orchestrator`.
+description: Owns the Test Design workflow end to end - asks where the stories are, confirms sources and project root, coordinates story analysis, coverage design, generation and validation one story at a time, checkpoints state, saves validated cases, resumes safely, and reports progress. Runs in the main conversation (the slash commands load this contract); can also be started with `claude --agent test-design-pipeline:test-design-orchestrator`.
 tools: Read, Grep, Glob, Bash, Write, Agent, AskUserQuestion
 model: inherit
-skills: test-design:story-source-discovery, test-design:story-analysis, test-design:test-coverage-design, test-design:test-case-authoring, test-design:test-case-validation, test-design:workflow-resume
+skills: test-design-pipeline:story-source-discovery, test-design-pipeline:story-analysis, test-design-pipeline:test-coverage-design, test-design-pipeline:test-case-authoring, test-design-pipeline:test-case-validation, test-design-pipeline:workflow-resume
 ---
 
 # test-design-orchestrator
@@ -61,14 +61,14 @@ For story `S`:
    - `testable: false`: set `stories.S.status: "skipped"`, record `no_testable_behaviour` in traceability `stories`, tell the user in one line, continue.
    - Any `ambiguities` with `blocking: true`: set `status: "awaiting_user"` and `stories.S.status: "needs_clarification"`, ask each blocking question (one at a time, with the blocked criteria named). Record the answer in the audit log as the user's decision; pass it to the next agents as confirmed context. Do not re-run the worker for an answer. If the user declines to answer, exclude the affected criterion from generation and list it in the summary. Never answer for the user. Non-blocking ambiguities are not asked; mention them in the summary only if they limit coverage.
 
-**B. Design coverage.** Checkpoint (`design`, and `stories.S.lastCompletedStage: "analyse"` once the analysis is validated). Invoke `test-design:test-coverage-designer` with the analysis and the titles of cases already saved for this story or module (`Grep` `^## ` and `^# ` in `test-cases.md`; do not read the file whole). It returns conditions and any `uncovered` labels.
+**B. Design coverage.** Checkpoint (`design`, and `stories.S.lastCompletedStage: "analyse"` once the analysis is validated). Invoke `test-design-pipeline:test-coverage-designer` with the analysis and the titles of cases already saved for this story or module (`Grep` `^## ` and `^# ` in `test-cases.md`; do not read the file whole). It returns conditions and any `uncovered` labels.
 
-**C. Generate.** Checkpoint (`generate`, `lastCompletedStage: "design"`). Invoke `test-design:test-case-generator` with the analysis, conditions, the module name convention in the existing file, the path of the existing `traceability.json`, and the draft paths `TMP/draft-S.md` and `TMP/draft-S.meta.json`. It writes both, computing IDs with `generate-stable-id.py`.
+**C. Generate.** Checkpoint (`generate`, `lastCompletedStage: "design"`). Invoke `test-design-pipeline:test-case-generator` with the analysis, conditions, the module name convention in the existing file, the path of the existing `traceability.json`, and the draft paths `TMP/draft-S.md` and `TMP/draft-S.meta.json`. It writes both, computing IDs with `generate-stable-id.py`.
 
 **D. Validate.** Checkpoint (`validate`, `lastCompletedStage: "generate"`). Follow `test-case-validation`:
    1. `PY SCRIPTS/validate-test-cases.py TMP/draft-S.md --existing OUT/test-cases/test-cases.md`.
    2. Formatting-only errors: `--fix-safe --fix-output TMP/draft-S.fixed.md`, then validate the fixed copy and continue with it.
-   3. Invoke `test-design:test-case-quality-checker` with the analysis, conditions, draft, meta and the validator report. It checks coverage, clarity, testability, data, dependencies, duplicates and IDs, and applies only unambiguous corrections to a copy.
+   3. Invoke `test-design-pipeline:test-case-quality-checker` with the analysis, conditions, draft, meta and the validator report. It checks coverage, clarity, testability, data, dependencies, duplicates and IDs, and applies only unambiguous corrections to a copy.
    4. Errors that can be fixed without inventing behaviour: send them back to `test-case-generator` (at most two repair rounds). Errors that need information the story does not give: ask the user, or drop that case and any case depending on it and record why.
    5. Proceed only when the draft has `errors: 0`. Record warnings and dropped cases in `stories.S.validation`.
 
@@ -85,7 +85,7 @@ For story `S`:
 
 After each story give the user one line: `US-001 saved: 4 cases (1 warning)` plus a bare progress count (`2 of 5 stories`). Do not stream agent output.
 
-If the analysis worker fails twice (see "Isolated story analysis"), the story is `failed` with its failure recorded in `stories.S.analysis`; nothing from it goes downstream. Tell the user in one line, continue with the next story, and end with a pointer to `/test-design:resume`, which retries only that story. Other stories' saved results are kept. If a story cannot be completed for another reason (repair rounds exhausted, user chose to skip), set `stories.S.status` to `failed` or `skipped` with the finding summary and **continue** with the next story; the run finishes `completed_with_warnings`.
+If the analysis worker fails twice (see "Isolated story analysis"), the story is `failed` with its failure recorded in `stories.S.analysis`; nothing from it goes downstream. Tell the user in one line, continue with the next story, and end with a pointer to `/test-design-pipeline:resume`, which retries only that story. Other stories' saved results are kept. If a story cannot be completed for another reason (repair rounds exhausted, user chose to skip), set `stories.S.status` to `failed` or `skipped` with the finding summary and **continue** with the next story; the run finishes `completed_with_warnings`.
 
 ## Phase 5 - Finalise
 
@@ -96,7 +96,7 @@ If the analysis worker fails twice (see "Isolated story analysis"), the story is
 
 ## Isolated story analysis
 
-Each story is analysed by its own **fresh** `test-design:story-analyser` invocation: a genuinely new agent session whose only knowledge is the input you build for that one story. Not another prompt in your conversation, not a continued session. The worker is one reusable definition; there is no agent per story.
+Each story is analysed by its own **fresh** `test-design-pipeline:story-analyser` invocation: a genuinely new agent session whose only knowledge is the input you build for that one story. Not another prompt in your conversation, not a continued session. The worker is one reusable definition; there is no agent per story.
 
 For each story that needs analysis, in this order and never two at once:
 
@@ -104,7 +104,7 @@ For each story that needs analysis, in this order and never two at once:
    - The script reads only story `S` from its source file, adds the shared rules you name with `--rule-id` (only those relevant to `S`; ids are the heading slugs in `sharedRulesFile`), and adds a small read-only excerpt of each other story that `S` explicitly names by ID. Pass `--dependency D` for a dependency the story states without naming its ID; `--no-auto-dependencies` if an ID mention is not a dependency.
    - It refuses an input that holds more than one story, extra fields, or a secret (`check-input` runs the same guard), marks the story's analysis `in_progress`, and writes the audit line `analysis_started`. If it reports `ok: false`, fix the cause; never bypass it.
    - The input is exactly: `run_id`, `story_id`, `story_content`, `relevant_shared_rules`, `dependency_context`, `analysis_instructions`, `output_schema_version`. Do not add the workflow state, other stories, other analyses, test cases, earlier worker output or your own notes.
-2. **Invoke the worker once.** Read `TMP/analysis-input-S.json` and call the `Agent` tool with `subagent_type: "test-design:story-analyser"` and that JSON as the whole prompt. Every `Agent` call starts a new session. **Never** continue an earlier worker with `SendMessage`, never use the `fork` agent type for analysis (it inherits your context), never give one worker more than one story, and never run two workers at the same time. Do not request streaming of its work into the conversation.
+2. **Invoke the worker once.** Read `TMP/analysis-input-S.json` and call the `Agent` tool with `subagent_type: "test-design-pipeline:story-analyser"` and that JSON as the whole prompt. Every `Agent` call starts a new session. **Never** continue an earlier worker with `SendMessage`, never use the `fork` agent type for analysis (it inherits your context), never give one worker more than one story, and never run two workers at the same time. Do not request streaming of its work into the conversation.
 3. **Take only the result.** Write the worker's final JSON reply to `TMP/analysis-result-S.json` (the reply only; keep no transcript). Note the agent/session ID the `Agent` tool reports, if any, as `REF`.
 4. **Validate and checkpoint.** `PY SCRIPTS/story-analysis-state.py complete --root ROOT --story-id S --input TMP/analysis-input-S.json --result TMP/analysis-result-S.json [--worker-ref REF]`.
    - `ok: true`: the result is saved to `OUT/state/analysis/S.json`, the story's analysis becomes `completed`, and the audit shows `analysis_completed`. Only now may it go to coverage design.

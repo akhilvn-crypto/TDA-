@@ -1,4 +1,4 @@
-# Test Design
+# Test Design Pipeline
 
 A Claude plugin that turns Markdown user stories into **automation-ready test cases**. It analyses each story in its own isolated agent session, one at a time, designs coverage with the right techniques, writes concise test cases in a fixed Markdown format, keeps story-to-test traceability, and saves everything locally so an interrupted run can be resumed safely.
 
@@ -13,22 +13,22 @@ The plugin is distributed through a Claude plugin marketplace. Replace the place
 claude plugin marketplace add <owner>/<marketplace-repo>
 
 # install the plugin from it
-claude plugin install test-design@<marketplace-name>
+claude plugin install test-design-pipeline@<marketplace-name>
 ```
 
-Inside Claude Code the same two steps are `/plugin marketplace add <owner>/<marketplace-repo>` and `/plugin install test-design@<marketplace-name>`; on recent versions one step also works: `/plugin install test-design --marketplace <owner>/<marketplace-repo>`. Then check that `/test-design:start`, `/test-design:status`, `/test-design:resume` and `/test-design:validate` are listed.
+Inside Claude Code the same two steps are `/plugin marketplace add <owner>/<marketplace-repo>` and `/plugin install test-design-pipeline@<marketplace-name>`; on recent versions one step also works: `/plugin install test-design-pipeline --marketplace <owner>/<marketplace-repo>`. Then check that `/test-design-pipeline:start`, `/test-design-pipeline:status`, `/test-design-pipeline:resume` and `/test-design-pipeline:validate` are listed.
 
-To try it from a local checkout without installing: `claude --plugin-dir ./test-design`.
+To try it from a local checkout without installing: `claude --plugin-dir ./test-design-pipeline`.
 
 **Requirements:** Python 3.9 or newer on the machine that runs Claude (standard library only; nothing is installed for you). Developed and tested on Python 3.14.
 
 ## Use
 
 ```text
-/test-design:start                         # asks: Where are your user stories located?
-/test-design:start docs/stories            # a directory (searched recursively for .md)
-/test-design:start docs/stories/login.md   # one file
-/test-design:start login                   # a bare file name
+/test-design-pipeline:start                         # asks: Where are your user stories located?
+/test-design-pipeline:start docs/stories            # a directory (searched recursively for .md)
+/test-design-pipeline:start docs/stories/login.md   # one file
+/test-design-pipeline:start login                   # a bare file name
 ```
 
 1. **Pick the stories.** A file, a directory, or a name. If several files match you choose which to process. Only `.md` is supported. The story folder is the default project root and you confirm the output location before anything is written.
@@ -37,10 +37,10 @@ To try it from a local checkout without installing: `claude --plugin-dir ./test-
 
 | Command | What it does |
 |---|---|
-| `/test-design:start [path]` | Run the workflow. Offers to resume if a run exists in that project |
-| `/test-design:status` | Phase, per-story progress, case counts, and whether your stories changed since generation (read-only) |
-| `/test-design:resume` | Continue the last incomplete run. Asks before touching anything affected by changed stories |
-| `/test-design:validate` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability. Changes nothing without your approval |
+| `/test-design-pipeline:start [path]` | Run the workflow. Offers to resume if a run exists in that project |
+| `/test-design-pipeline:status` | Phase, per-story progress, case counts, and whether your stories changed since generation (read-only) |
+| `/test-design-pipeline:resume` | Continue the last incomplete run. Asks before touching anything affected by changed stories |
+| `/test-design-pipeline:validate` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability. Changes nothing without your approval |
 
 ## Isolated story analysis
 
@@ -50,7 +50,7 @@ Every story is analysed by its **own fresh `story-analyser` invocation**, so one
 - **One reusable worker.** A single `story-analyser` definition is started anew for each story (one `Agent` call per story, never continued with `SendMessage`, never forked). There is no agent definition per story.
 - **Minimal input.** A worker receives only: `run_id`, `story_id`, `story_content` (that story alone), `relevant_shared_rules` (only rules the story needs), `dependency_context` (a small read-only excerpt of a story it explicitly names, only where needed), `analysis_instructions` and `output_schema_version`. It never gets the workflow state, the source document, other stories, earlier analyses, generated cases or any transcript. `story-analysis-state.py begin` builds this input and refuses one that holds more than one story, unexpected fields or a secret.
 - **Structured result.** The worker returns one compact JSON object (`schemas/story-analysis.schema.json`, version 2) and finishes: `story_id`, `story_summary`, `behaviour_to_validate`, `acceptance_criteria_interpretation`, `business_rules`, `preconditions`, `dependencies`, `relevant_non_functional_expectations`, `test_design_considerations`, `ambiguities`, `analysis_complete`. It is an internal handoff to coverage design, not a report, and is never written into your story file.
-- **Validated before use.** `story-analysis-state.py complete` checks the result (schema, matching story ID, complete, unique labels, no secrets). An invalid or partial result is never passed to coverage design: the story is marked `failed`, the orchestrator retries it once in another fresh worker, and a second failure leaves it for `/test-design:resume` to retry on its own. The orchestrator never falls back to analysing stories in its own context.
+- **Validated before use.** `story-analysis-state.py complete` checks the result (schema, matching story ID, complete, unique labels, no secrets). An invalid or partial result is never passed to coverage design: the story is marked `failed`, the orchestrator retries it once in another fresh worker, and a second failure leaves it for `/test-design-pipeline:resume` to retry on its own. The orchestrator never falls back to analysing stories in its own context.
 - **Checkpoints and resume.** Per story, `workflow.json` records the analysis status (`not_started`, `in_progress`, `completed`, `failed`), the story fingerprint, the fingerprints of the shared rules and dependency excerpts used, and the last completed stage; the result is saved in `state/analysis/<story-id>.json`. Resume reuses a completed analysis only while those fingerprints are unchanged. A changed story, a changed shared rule or a changed dependency invalidates only the analyses that used it. Existing test cases are never regenerated without your explicit yes.
 - **Shared rules (optional).** If your stories rely on a project-level rules file (Markdown, one rule per heading), name it when you confirm the sources; it is stored as `sharedRulesFile`. Each worker gets only the rules that apply to its story, and editing a rule invalidates only the stories that used it.
 - **Audit evidence.** `audit.jsonl` records `analysis_started`, `analysis_completed`, `analysis_failed` and `analysis_invalidated` (IDs and counts only). `story-analysis-state.py check-audit` verifies from it that workers ran one at a time and that no worker session served two stories. Worker transcripts are not stored.
@@ -141,7 +141,7 @@ tests/                       unittest suite and fixtures
 
 ```bash
 python -m unittest discover -s tests -t tests      # 189 tests, standard library only
-claude plugin validate ./test-design               # manifest and component check
+claude plugin validate ./test-design-pipeline               # manifest and component check
 ```
 
 Scripts can be run by hand; each prints JSON:
@@ -155,20 +155,20 @@ python scripts/story-analysis-state.py plan --root .    # which story analyses w
 
 ## Marketplace registration (maintainers)
 
-Keep `.claude-plugin/marketplace.json` in the **marketplace** repository, not here. Add an entry whose `name` matches `plugin.json` (`test-design`) and keep the versions equal:
+Keep `.claude-plugin/marketplace.json` in the **marketplace** repository, not here. Add an entry whose `name` matches `plugin.json` (`test-design-pipeline`) and keep the versions equal:
 
 ```json
 {
-  "name": "test-design",
-  "source": "./plugins/test-design",
+  "name": "test-design-pipeline",
+  "source": "./plugins/test-design-pipeline",
   "description": "Design automation-ready test cases from Markdown user stories.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "category": "testing",
   "tags": ["testing", "test-design", "qa", "traceability"]
 }
 ```
 
-Use `"source": "./plugins/test-design"` when the plugin folder lives inside the marketplace repository, or a GitHub source object when it stays in its own repository. Then run `claude plugin validate ./path/to/marketplace`, add the marketplace in a clean environment, install, and confirm the four commands appear.
+Use `"source": "./plugins/test-design-pipeline"` when the plugin folder lives inside the marketplace repository, or a GitHub source object when it stays in its own repository. Then run `claude plugin validate ./path/to/marketplace`, add the marketplace in a clean environment, install, and confirm the four commands appear.
 
 ## License
 

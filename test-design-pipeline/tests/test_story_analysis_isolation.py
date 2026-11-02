@@ -560,7 +560,7 @@ class PluginContract(unittest.TestCase):
         market = json.loads((PLUGIN.parent / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
         (entry,) = [p for p in market["plugins"] if p["name"] == manifest["name"]]
         self.assertEqual(entry["version"], manifest["version"])
-        self.assertEqual(manifest["name"], "test-design")
+        self.assertEqual(manifest["name"], "test-design-pipeline")
 
 
 if __name__ == "__main__":

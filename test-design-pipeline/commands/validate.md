@@ -4,11 +4,11 @@ argument-hint: "[project root]"
 disable-model-invocation: true
 ---
 
-# /test-design:validate
+# /test-design-pipeline:validate
 
 Arguments: `$ARGUMENTS`
 
-1. Load the `test-case-validation` skill (`${CLAUDE_PLUGIN_ROOT}/skills/test-case-validation/SKILL.md`; if the variable is not expanded, find the installed `test-design` plugin folder) and read `${CLAUDE_PLUGIN_ROOT}/rules/test-case-format.md`.
+1. Load the `test-case-validation` skill (`${CLAUDE_PLUGIN_ROOT}/skills/test-case-validation/SKILL.md`; if the variable is not expanded, find the installed `test-design-pipeline` plugin folder) and read `${CLAUDE_PLUGIN_ROOT}/rules/test-case-format.md`.
 2. Project root: `$ARGUMENTS` if given, otherwise the nearest ancestor of the working directory containing `test-design/test-cases/test-cases.md`. If none is found, ask.
 3. Run, with `python` (or `python3` / `py -3`):
    - `validate-test-cases.py "<root>/test-design/test-cases/test-cases.md"`

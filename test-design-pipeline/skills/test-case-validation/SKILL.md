@@ -1,6 +1,6 @@
 ---
 name: test-case-validation
-description: Validate drafted or saved test cases (structure, IDs, data and env references, dependencies, expected results, duplicates, traceability) with the deterministic scripts, interpret every finding code, apply safe fixes, and decide what may be saved. Use before every save and in /test-design:validate.
+description: Validate drafted or saved test cases (structure, IDs, data and env references, dependencies, expected results, duplicates, traceability) with the deterministic scripts, interpret every finding code, apply safe fixes, and decide what may be saved. Use before every save and in /test-design-pipeline:validate.
 user-invocable: false
 ---
 

@@ -3,7 +3,7 @@ name: test-coverage-designer
 description: Takes one analysed story and returns the test conditions that cover its acceptance criteria, business rules and testable NFRs, choosing suitable techniques (positive/negative, boundary, equivalence partitioning, decision table, state transition, end-to-end, non-functional) and avoiding duplicates of already-saved scenarios. Returns JSON; writes nothing.
 tools: Read, Grep, Glob
 model: inherit
-skills: test-design:test-coverage-design
+skills: test-design-pipeline:test-coverage-design
 ---
 
 # test-coverage-designer

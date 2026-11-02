@@ -3,7 +3,7 @@ name: test-case-generator
 description: Converts test conditions for one story into canonical-format Markdown test cases (stable IDs from the script, declared test data, concise steps, observable expected results) written to a draft file in the scratch folder, with a metadata file for traceability. Never writes Playwright code, selectors or implementation instructions, and never writes to the project output.
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
-skills: test-design:test-case-authoring, test-design:test-case-validation
+skills: test-design-pipeline:test-case-authoring, test-design-pipeline:test-case-validation
 ---
 
 # test-case-generator

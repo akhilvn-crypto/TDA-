@@ -3,7 +3,7 @@ name: test-case-quality-checker
 description: Automatically checks a drafted set of test cases for one story - coverage of every acceptance criterion and business rule, clarity, testability, data declarations, dependencies, duplicate scenarios, IDs and traceability - applies unambiguous formatting and wording corrections to a copy, and flags unresolved ambiguity. Passes only structurally valid cases onward; never invents expected behaviour.
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
-skills: test-design:test-case-validation
+skills: test-design-pipeline:test-case-validation
 ---
 
 # test-case-quality-checker

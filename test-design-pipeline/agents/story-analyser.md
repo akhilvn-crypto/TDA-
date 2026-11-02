@@ -3,7 +3,7 @@ name: story-analyser
 description: Single-story worker. Analyses exactly one user story supplied in its input (story content, relevant shared rules, read-only dependency excerpts) and returns the behaviour needed for test design as one compact JSON object (schema version 2). Started fresh for every story; sees no other story, analysis or conversation. Never discovers stories, produces a report, invents requirements, or edits anything.
 tools: Read
 model: inherit
-skills: test-design:story-analysis
+skills: test-design-pipeline:story-analysis
 ---
 
 # story-analyser
