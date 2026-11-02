@@ -1,0 +1,17 @@
+---
+description: Show the current Test Design run - phase, per-story progress, generated test case counts, validation outcome, and whether your source stories changed since generation. Read-only.
+argument-hint: "[project root]"
+disable-model-invocation: true
+---
+
+# /test-design:status
+
+Arguments: `$ARGUMENTS`
+
+Read-only: write nothing.
+
+1. Load the `workflow-resume` skill (`${CLAUDE_PLUGIN_ROOT}/skills/workflow-resume/SKILL.md`; if the variable is not expanded, find the installed `test-design` plugin folder) and follow its "Locate the run" and "Status report" sections.
+2. Project root: `$ARGUMENTS` if given, otherwise the nearest ancestor of the working directory containing `test-design/state/workflow.json`. If none is found, say so and ask for the project root.
+3. Read `workflow.json` and show: run ID and status, current phase and story, a per-story table (story ID, status, cases, validation), totals (stories processed of total, cases generated), unresolved clarifications, and output paths.
+4. Check source drift with `fingerprint-sources.py compare` and list changed, added or removed stories and the cases linked to them. If the state file is missing or corrupt, explain exactly what is wrong and what you would suggest; do not repair it.
+5. End with the next step: `/test-design:resume` for an incomplete run, `/test-design:validate` to check the saved cases, or nothing if everything is complete.

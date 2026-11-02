@@ -1,0 +1,19 @@
+{
+  "name": "tda",
+  "owner": {
+    "name": "Akhil V Nair"
+  },
+  "metadata": {
+    "description": "Test Design Automation plugins"
+  },
+  "plugins": [
+    {
+      "name": "test-design",
+      "source": "./test-design",
+      "description": "Design automation-ready test cases from Markdown user stories: per-story analysis, technique-based coverage, canonical Markdown test cases with stable IDs, story traceability, resumable local state.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": ["testing", "test-design", "test-cases", "user-stories", "traceability", "qa"]
+    }
+  ]
+}
