@@ -27,7 +27,7 @@ Read all of `${CLAUDE_PLUGIN_ROOT}/rules/*.md` once (short). Read the SKILL.md o
 3. Never save a case that fails validation. No per-case approval, review or rejection workflow, and no pending/approved/rejected folders: validated cases go straight into `test-cases.md`.
 4. Never overwrite or regenerate existing cases without the user's explicit yes. Hand edits to `test-cases.md` survive every operation.
 5. Never copy secret values anywhere (cases, state, audit, your messages).
-6. One story at a time. Load only the current story and the dependencies it needs.
+6. One story at a time, sequentially. Each story is analysed by its own **fresh** `story-analyser` invocation that receives only that story (see "Isolated story analysis"). You never analyse a story yourself, and you never fall back to analysing several stories in your own context.
 7. Checkpoint **before** each meaningful operation and mark it complete **after** its output is validated.
 
 ## Phase 0 - Capability check
@@ -40,38 +40,40 @@ Follow the `story-source-discovery` skill:
 
 1. If the command gave a location, use it; otherwise ask "Where are your user stories located?".
 2. Resolve with `discover-story-files.py`; handle not found, ambiguous, multiple candidates, duplicate or inferred story IDs.
-3. Confirm in **one** question: the files to process, the project root, and the output folder `OUT`. Offer to change any.
+3. Confirm in **one** question: the files to process, the project root, and the output folder `OUT`. Offer to change any. If the stories rely on a project-level rules or conventions file (Markdown, one rule per heading), the user may name it in the same answer; it becomes `sharedRulesFile`. Never go looking for one on your own.
 4. If `existingOutput.state` is true, do not start over: load `workflow-resume`, summarise the previous run, and ask whether to resume, or start a new run that appends to the existing cases (it never overwrites them).
 5. If an existing `test-design/` folder has a different structure, ask where to put the output instead of creating a competing one.
 6. `PY SCRIPTS/safe-file-operations.py check-access --root ROOT --source <file> ...`. Stop and ask if `ok` is false.
 7. **Initialise state** (new run only). `runId` = `run-YYYYMMDD-HHMMSS` (UTC). Snapshot sources:
    `PY SCRIPTS/fingerprint-sources.py snapshot <files> --root ROOT --output test-design/state/source-fingerprints.json`.
-   Write `workflow.json` from `templates/test-design-state.template.json` (fill every field; stories from the fingerprint output, status `pending`) to `TMP/workflow.json`, then
+   Write `workflow.json` from `templates/test-design-state.template.json` (fill every field, including `sharedRulesFile` or `null`; stories from the fingerprint output, status `pending`) to `TMP/workflow.json`, then
    `PY SCRIPTS/safe-file-operations.py write --root ROOT --target test-design/state/workflow.json --source TMP/workflow.json --schema workflow-state`.
    If a previous `workflow.json` exists and the user chose a new run, add `--allow-overwrite` (the old checkpoint is backed up to `state/backups/`); the previous `traceability.json` and cases stay and are extended, never reset.
    Append an audit line `{"event":"run_started","runId":...,"sourceFiles":[...]}` (see "Audit").
 
 ## Phases 2-5 - Per-story loop
 
-Process stories in file order. Skip stories already `saved`. For story `S`:
+Process stories in file order, **one at a time**: finish story `S` (A to E) before starting the next. Skip stories already `saved`. Before the loop run `PY SCRIPTS/story-analysis-state.py plan --root ROOT --apply` once: it tells you per story whether to `reuse` a saved analysis, `analyse`, `skip`, or that an analysis was `invalidated` (its story, a shared rule it used, or a dependency excerpt changed). Invalidation touches only the affected analyses. An invalidated story that is already `saved` goes through the `workflow-resume` "Reconcile" question first; never regenerate its cases automatically.
 
-**A. Analyse.** Checkpoint (`currentPhase: "analyse"`, `currentStoryId: S`, `stories.S.status: "analysing"`, `inProgressOperation: {name: "analyse", storyId: S, startedAt}`). Invoke `test-design:story-analyser` with: story ID, source file, its `startLine`/`endLine` from `source-fingerprints.json`, the paths of the other stories in the selected sources (so it can look up dependencies by line range). It returns the analysis JSON.
+For story `S`:
+
+**A. Analyse** (isolated; see "Isolated story analysis" below). If `plan` said `reuse`, run `story-analysis-state.py show --root ROOT --story-id S` and use that result without invoking a worker. Otherwise checkpoint (`currentPhase: "analyse"`, `currentStoryId: S`, `stories.S.status: "analysing"`, `inProgressOperation: {name: "analyse", storyId: S, startedAt}`) and run one fresh worker for `S`. It yields the validated analysis JSON.
    - `testable: false`: set `stories.S.status: "skipped"`, record `no_testable_behaviour` in traceability `stories`, tell the user in one line, continue.
-   - `clarifications` not empty: set `status: "awaiting_user"` and `stories.S.status: "needs_clarification"`, ask each question (one at a time, with the blocked tests named). Record the answer in the audit log as the user's decision; pass it to the next agents as confirmed context. If the user declines to answer, exclude the affected criterion from generation and list it in the summary. Never answer for the user.
+   - Any `ambiguities` with `blocking: true`: set `status: "awaiting_user"` and `stories.S.status: "needs_clarification"`, ask each blocking question (one at a time, with the blocked criteria named). Record the answer in the audit log as the user's decision; pass it to the next agents as confirmed context. Do not re-run the worker for an answer. If the user declines to answer, exclude the affected criterion from generation and list it in the summary. Never answer for the user. Non-blocking ambiguities are not asked; mention them in the summary only if they limit coverage.
 
-**B. Design coverage.** Checkpoint (`design`). Invoke `test-design:test-coverage-designer` with the analysis and the titles of cases already saved for this story or module (`Grep` `^## ` and `^# ` in `test-cases.md`; do not read the file whole). It returns conditions and any `uncovered` labels.
+**B. Design coverage.** Checkpoint (`design`, and `stories.S.lastCompletedStage: "analyse"` once the analysis is validated). Invoke `test-design:test-coverage-designer` with the analysis and the titles of cases already saved for this story or module (`Grep` `^## ` and `^# ` in `test-cases.md`; do not read the file whole). It returns conditions and any `uncovered` labels.
 
-**C. Generate.** Checkpoint (`generate`). Invoke `test-design:test-case-generator` with the analysis, conditions, the module name convention in the existing file, the path of the existing `traceability.json`, and the draft paths `TMP/draft-S.md` and `TMP/draft-S.meta.json`. It writes both, computing IDs with `generate-stable-id.py`.
+**C. Generate.** Checkpoint (`generate`, `lastCompletedStage: "design"`). Invoke `test-design:test-case-generator` with the analysis, conditions, the module name convention in the existing file, the path of the existing `traceability.json`, and the draft paths `TMP/draft-S.md` and `TMP/draft-S.meta.json`. It writes both, computing IDs with `generate-stable-id.py`.
 
-**D. Validate.** Checkpoint (`validate`). Follow `test-case-validation`:
+**D. Validate.** Checkpoint (`validate`, `lastCompletedStage: "generate"`). Follow `test-case-validation`:
    1. `PY SCRIPTS/validate-test-cases.py TMP/draft-S.md --existing OUT/test-cases/test-cases.md`.
    2. Formatting-only errors: `--fix-safe --fix-output TMP/draft-S.fixed.md`, then validate the fixed copy and continue with it.
    3. Invoke `test-design:test-case-quality-checker` with the analysis, conditions, draft, meta and the validator report. It checks coverage, clarity, testability, data, dependencies, duplicates and IDs, and applies only unambiguous corrections to a copy.
    4. Errors that can be fixed without inventing behaviour: send them back to `test-case-generator` (at most two repair rounds). Errors that need information the story does not give: ask the user, or drop that case and any case depending on it and record why.
    5. Proceed only when the draft has `errors: 0`. Record warnings and dropped cases in `stories.S.validation`.
 
-**E. Save.** Checkpoint (`save`). In this order, so a crash never loses the mapping:
-   1. **Traceability first.** Build a JSON merge patch with `"version": 1` (required by the schema when the file is first created), the story (`sourceFile`, `title`, `criteria` labels, `status: "analysed"`) and each case's metadata (only cases that passed validation), then
+**E. Save.** Checkpoint (`save`, `lastCompletedStage: "validate"`). In this order, so a crash never loses the mapping:
+   1. **Traceability first.** Build a JSON merge patch with `"version": 1` (required by the schema when the file is first created), the story (`sourceFile`, `title`, `criteria` labels = the `criteriaLabels` printed by `story-analysis-state.py complete`, `status: "analysed"`) and each case's metadata (only cases that passed validation), then
       `PY SCRIPTS/safe-file-operations.py merge-json --root ROOT --target test-design/state/traceability.json --patch-file TMP/trace-S.json --schema traceability --create --touch updatedAt`.
    2. **Cases.** Hash first if a file exists: `safe-file-operations.py hash OUT/test-cases/test-cases.md`; then
       `PY SCRIPTS/safe-file-operations.py merge-cases --root ROOT --target test-design/test-cases/test-cases.md --source <validated draft> [--expect-sha256 <outputs.testCases.sha256 from workflow.json>]`.
@@ -79,18 +81,39 @@ Process stories in file order. Skip stories already `saved`. For story `S`:
       - Exit 3 `ID_CONFLICT`: these IDs are already saved. Compare each with the draft. Identical content = already saved (a resumed run), treat as done. Different content: ask the user to keep the existing case or replace it (`replace-case ... --expect-sha256 <current> --yes`, only after a yes; a backup is kept).
       - Exit 1 `VALIDATION`: the draft changed since you validated it; return to step D.
    3. **Verify.** `validate-traceability.py --test-cases OUT/test-cases/test-cases.md --traceability OUT/state/traceability.json`. Errors: fix the mapping, do not continue.
-   4. **Checkpoint complete:** `stories.S` = `{status: "saved", testCaseIds, validation: {status, errors: 0, warnings, findings}, updatedAt}`, `outputs.testCases` = `{path, sha256 (from the merge result), caseCount (totalCases), updatedAt}`, `outputs.traceability.sha256`, `lastCompletedOperation: {name: "save", storyId: S, completedAt}`, `inProgressOperation: null`, `currentStoryId: null`. Append audit `{"event":"story_saved","storyId":S,"cases":[ids]}`.
+   4. **Checkpoint complete:** `stories.S` = `{status: "saved", lastCompletedStage: "save", testCaseIds, validation: {status, errors: 0, warnings, findings}, updatedAt}`, `outputs.testCases` = `{path, sha256 (from the merge result), caseCount (totalCases), updatedAt}`, `outputs.traceability.sha256`, `lastCompletedOperation: {name: "save", storyId: S, completedAt}`, `inProgressOperation: null`, `currentStoryId: null`. Append audit `{"event":"story_saved","storyId":S,"cases":[ids]}`.
 
 After each story give the user one line: `US-001 saved: 4 cases (1 warning)` plus a bare progress count (`2 of 5 stories`). Do not stream agent output.
 
-If a story cannot be completed (repair rounds exhausted, user chose to skip), set `stories.S.status` to `failed` or `skipped` with the finding summary and **continue** with the next story; the run finishes `completed_with_warnings`.
+If the analysis worker fails twice (see "Isolated story analysis"), the story is `failed` with its failure recorded in `stories.S.analysis`; nothing from it goes downstream. Tell the user in one line, continue with the next story, and end with a pointer to `/test-design:resume`, which retries only that story. Other stories' saved results are kept. If a story cannot be completed for another reason (repair rounds exhausted, user chose to skip), set `stories.S.status` to `failed` or `skipped` with the finding summary and **continue** with the next story; the run finishes `completed_with_warnings`.
 
 ## Phase 5 - Finalise
 
-1. `validate-test-cases.py OUT/test-cases/test-cases.md` and `validate-traceability.py ... --fingerprints OUT/state/source-fingerprints.json`. Errors in cases you wrote: fix via the loop. Errors caused by user edits: report them, do not auto-fix the user's text.
+1. `PY SCRIPTS/story-analysis-state.py check-audit --root ROOT`: any finding (two workers at once, one worker session used for two stories) is reported in the summary and never hidden. Then `validate-test-cases.py OUT/test-cases/test-cases.md` and `validate-traceability.py ... --fingerprints OUT/state/source-fingerprints.json`. Errors in cases you wrote: fix via the loop. Errors caused by user edits: report them, do not auto-fix the user's text.
 2. `fingerprint-sources.py compare ... --previous ...`: if sources changed during the run, say so and which stories.
 3. Set `status` (`completed`, or `completed_with_warnings` when any story is skipped/failed, any warning or uncovered criterion remains), `currentPhase: "done"`, and append audit `run_finished`.
 4. **Summary** (concise): stories processed (saved / skipped / failed), test cases generated (and total in the file), validation issues if any (code and count, plus the few that matter), uncovered criteria, user edits detected, output location (`OUT/test-cases/test-cases.md`), and the next step (the Automation Builder reads this file; secrets named as `env:` must be added to `automation/.env` by the user - list those variable names).
+
+## Isolated story analysis
+
+Each story is analysed by its own **fresh** `test-design:story-analyser` invocation: a genuinely new agent session whose only knowledge is the input you build for that one story. Not another prompt in your conversation, not a continued session. The worker is one reusable definition; there is no agent per story.
+
+For each story that needs analysis, in this order and never two at once:
+
+1. **Build the minimal input.** `PY SCRIPTS/story-analysis-state.py begin --root ROOT --story-id S --output TMP/analysis-input-S.json [--rule-id R ...] [--dependency D ...]`.
+   - The script reads only story `S` from its source file, adds the shared rules you name with `--rule-id` (only those relevant to `S`; ids are the heading slugs in `sharedRulesFile`), and adds a small read-only excerpt of each other story that `S` explicitly names by ID. Pass `--dependency D` for a dependency the story states without naming its ID; `--no-auto-dependencies` if an ID mention is not a dependency.
+   - It refuses an input that holds more than one story, extra fields, or a secret (`check-input` runs the same guard), marks the story's analysis `in_progress`, and writes the audit line `analysis_started`. If it reports `ok: false`, fix the cause; never bypass it.
+   - The input is exactly: `run_id`, `story_id`, `story_content`, `relevant_shared_rules`, `dependency_context`, `analysis_instructions`, `output_schema_version`. Do not add the workflow state, other stories, other analyses, test cases, earlier worker output or your own notes.
+2. **Invoke the worker once.** Read `TMP/analysis-input-S.json` and call the `Agent` tool with `subagent_type: "test-design:story-analyser"` and that JSON as the whole prompt. Every `Agent` call starts a new session. **Never** continue an earlier worker with `SendMessage`, never use the `fork` agent type for analysis (it inherits your context), never give one worker more than one story, and never run two workers at the same time. Do not request streaming of its work into the conversation.
+3. **Take only the result.** Write the worker's final JSON reply to `TMP/analysis-result-S.json` (the reply only; keep no transcript). Note the agent/session ID the `Agent` tool reports, if any, as `REF`.
+4. **Validate and checkpoint.** `PY SCRIPTS/story-analysis-state.py complete --root ROOT --story-id S --input TMP/analysis-input-S.json --result TMP/analysis-result-S.json [--worker-ref REF]`.
+   - `ok: true`: the result is saved to `OUT/state/analysis/S.json`, the story's analysis becomes `completed`, and the audit shows `analysis_completed`. Only now may it go to coverage design.
+   - Exit 1 `INVALID_WORKER_OUTPUT`: the script has already recorded the story as `failed` and saved nothing. Never pass the output downstream, never repair it by hand. Retry **once** with a new `begin` and a new fresh worker (the attempt count rises). A second failure stops work on this story (see the end of the loop). A worker that crashes or times out: `story-analysis-state.py fail --root ROOT --story-id S --reason "<short reason>"`, then the same one retry.
+5. **Drop the worker.** Keep only the compact run metadata (story ID, status, counts) and the structured result you pass to coverage design. Do not retain or summarise the worker's transcript. Then start the next story the same way; its worker knows nothing about this one.
+
+Execution is **sequential**: one worker at a time, in file order. Do not parallelise, even for independent stories.
+
+If this surface cannot start a separate agent session per call, stop and say so; do not analyse stories in your own context as a substitute and do not claim isolation.
 
 ## State writes
 
@@ -100,11 +123,11 @@ A schema failure means the patch is wrong: fix the patch, never bypass the schem
 
 ## Audit
 
-Append one line per significant event: `PY SCRIPTS/safe-file-operations.py append-jsonl --root ROOT --target test-design/state/audit.jsonl --entry '<json>'`. Events: `run_started`, `story_started`, `clarification_answered` (question and answer summary, no secrets), `story_saved`, `story_skipped`, `case_replaced`, `source_changed`, `run_finished`. Entries contain IDs, counts and decisions only.
+Append one line per significant event: `PY SCRIPTS/safe-file-operations.py append-jsonl --root ROOT --target test-design/state/audit.jsonl --entry '<json>'`. Events: `run_started`, `story_started`, `analysis_started`, `analysis_completed`, `analysis_failed`, `analysis_invalidated` (all four written by `story-analysis-state.py`, not by hand), `clarification_answered` (question and answer summary, no secrets), `story_saved`, `story_skipped`, `case_replaced`, `source_changed`, `run_finished`. Entries contain IDs, counts and decisions only.
 
 ## Resume
 
-If asked to resume, or if Phase 1 finds an existing run, follow `workflow-resume`: read the checkpoint, verify fingerprints and output hashes, classify stories, and continue only the incomplete ones. For changed sources, ask before reconciling; never regenerate automatically.
+If asked to resume, or if Phase 1 finds an existing run, follow `workflow-resume`: read the checkpoint, verify fingerprints and output hashes, classify stories, and continue only the incomplete ones. Failed or interrupted analyses are retried alone in fresh workers; completed analyses with unchanged fingerprints are reused. For changed sources, ask before reconciling; never regenerate automatically.
 
 ## Tone
 

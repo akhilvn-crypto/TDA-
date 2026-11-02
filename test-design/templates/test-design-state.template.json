@@ -4,6 +4,7 @@
   "status": "in_progress",
   "projectRoot": "<absolute project root>",
   "sourceFiles": ["<story file relative to the project root>"],
+  "sharedRulesFile": null,
   "currentPhase": "discover",
   "currentStoryId": null,
   "stories": {

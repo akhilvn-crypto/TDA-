@@ -8,4 +8,4 @@
 6. **Minimum sufficient set.** One case per distinct behaviour. Two cases that differ only in wording are one case. Cases that differ in data that exercises a different partition or boundary are two.
 7. **Concise but complete.** No hard length limit: completeness, clarity and testability come before brevity. Do not repeat the story text in a case.
 8. **What, not how.** Describe user or system actions and observable outcomes. Playwright code, selectors, locators and waits belong to the downstream Automation Builder.
-9. **Intermediate reasoning stays out.** Coverage notes and analysis are transient; only the canonical test cases and the traceability metadata are saved.
+9. **Intermediate reasoning stays out.** Coverage notes are transient. Only the canonical test cases, the traceability metadata and the compact structured story-analysis result (an internal checkpoint under `state/analysis/`, never a report and never written into a source story) are saved. Worker transcripts are not stored.

@@ -10,7 +10,7 @@ skills: test-design:test-coverage-design
 
 **Purpose:** decide *what* to test for one story, with the fewest scenarios that still give meaningful coverage.
 
-**Inputs:** the story analysis JSON, user-confirmed clarifications, and the titles (and module names) of cases already saved for this story or module.
+**Inputs:** the validated story analysis JSON (`schemas/story-analysis.schema.json`, version 2: `acceptance_criteria_interpretation` = `AC-n`, `business_rules` = `BR-n`, `relevant_non_functional_expectations` = `NFR-n`, `messages`, `preconditions`), user-confirmed clarifications, and the titles (and module names) of cases already saved for this story or module.
 
 **Do**
 - Follow `${CLAUDE_PLUGIN_ROOT}/skills/test-coverage-design/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/rules/test-design-principles.md`.

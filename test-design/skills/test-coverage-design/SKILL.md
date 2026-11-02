@@ -6,7 +6,7 @@ user-invocable: false
 
 # Test coverage design
 
-Input: the story analysis (criteria `AC-n`, rules `BR-n`, NFRs `NFR-n`, messages, preconditions) plus the list of scenarios already saved for the same story or module (titles only). Output: a list of test conditions. Not saved; the authoring step turns each into a case.
+Input: the validated story analysis (`acceptance_criteria_interpretation` `AC-n`, `business_rules` `BR-n`, `relevant_non_functional_expectations` `NFR-n`, `messages`, `preconditions`, `test_design_considerations`; schema `schemas/story-analysis.schema.json`) plus the list of scenarios already saved for the same story or module (titles only). Output: a list of test conditions. Not saved; the authoring step turns each into a case.
 
 ## Choose techniques by what the story contains
 

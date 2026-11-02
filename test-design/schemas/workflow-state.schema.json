@@ -13,6 +13,10 @@
     "sourceFiles": { "type": "array", "minItems": 1, "items": { "type": "string" } },
     "currentPhase": { "type": "string", "enum": ["discover", "analyse", "design", "generate", "validate", "save", "finalise", "done"] },
     "currentStoryId": { "type": ["string", "null"] },
+    "sharedRulesFile": {
+      "description": "Optional Markdown file of project-level rules/conventions (one rule per heading) that stories may rely on. Path relative to the project root, or absolute.",
+      "type": ["string", "null"]
+    },
     "stories": {
       "type": "object",
       "additionalProperties": {
@@ -50,6 +54,31 @@
             }
           },
           "clarification": { "type": ["string", "null"] },
+          "lastCompletedStage": { "type": "string", "enum": ["analyse", "design", "generate", "validate", "save"] },
+          "analysis": {
+            "description": "Isolated story-analysis checkpoint. The structured result lives in resultPath; no worker transcript is stored.",
+            "type": "object",
+            "required": ["status"],
+            "additionalProperties": false,
+            "properties": {
+              "status": { "type": "string", "enum": ["not_started", "in_progress", "completed", "failed"] },
+              "attempts": { "type": "integer", "minimum": 0 },
+              "sourceSha256": { "type": "string", "description": "Fingerprint of the story the analysis was made from." },
+              "sharedRules": { "type": "object", "description": "rule id -> fingerprint of each shared rule given to the worker.", "additionalProperties": { "type": "string" } },
+              "dependencies": { "type": "object", "description": "story id -> fingerprint of each dependency excerpt given to the worker.", "additionalProperties": { "type": "string" } },
+              "inputFingerprint": { "type": "string" },
+              "resultPath": { "type": "string" },
+              "startedAt": { "type": "string" },
+              "completedAt": { "type": "string" },
+              "failure": {
+                "type": "object",
+                "required": ["reason", "at"],
+                "additionalProperties": false,
+                "properties": { "reason": { "type": "string" }, "at": { "type": "string" } }
+              },
+              "invalidatedBy": { "type": "array", "items": { "type": "string" } }
+            }
+          },
           "updatedAt": { "type": "string" }
         }
       }

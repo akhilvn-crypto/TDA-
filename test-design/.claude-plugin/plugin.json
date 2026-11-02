@@ -1,7 +1,7 @@
 {
   "name": "test-design",
   "displayName": "Test Design",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Design automation-ready test cases from Markdown user stories: per-story analysis, technique-based coverage, canonical Markdown test cases with stable IDs, story traceability, resumable local state.",
   "author": {
     "name": "Akhil V Nair"
