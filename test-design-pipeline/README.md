@@ -6,17 +6,21 @@ Test Design decides **what to validate**. The downstream Automation Builder deci
 
 ## Install
 
-The plugin is distributed through a Claude plugin marketplace. Replace the placeholders with your marketplace's repository and name.
+The plugin is distributed through the `tda` marketplace in the GitHub repository `akhilvn-crypto/TDA-`.
 
 ```bash
-# add the marketplace (GitHub repo, git URL, or local path)
-claude plugin marketplace add <owner>/<marketplace-repo>
+# add the marketplace
+claude plugin marketplace add akhilvn-crypto/TDA-
 
 # install the plugin from it
-claude plugin install test-design-pipeline@<marketplace-name>
+claude plugin install test-design-pipeline@tda
+
+# later, to update
+claude plugin marketplace update tda
+claude plugin update test-design-pipeline@tda
 ```
 
-Inside Claude Code the same two steps are `/plugin marketplace add <owner>/<marketplace-repo>` and `/plugin install test-design-pipeline@<marketplace-name>`; on recent versions one step also works: `/plugin install test-design-pipeline --marketplace <owner>/<marketplace-repo>`. Then check that `/test-design-pipeline:start`, `/test-design-pipeline:status`, `/test-design-pipeline:resume` and `/test-design-pipeline:validate` are listed.
+Inside Claude Code the same steps are `/plugin marketplace add akhilvn-crypto/TDA-` and `/plugin install test-design-pipeline@tda`. Then check that `/test-design-pipeline:start`, `/test-design-pipeline:status`, `/test-design-pipeline:resume` and `/test-design-pipeline:validate` are listed. See the repository's top-level README for the full install, update and flow guide.
 
 To try it from a local checkout without installing: `claude --plugin-dir ./test-design-pipeline`.
 
@@ -155,20 +159,7 @@ python scripts/story-analysis-state.py plan --root .    # which story analyses w
 
 ## Marketplace registration (maintainers)
 
-Keep `.claude-plugin/marketplace.json` in the **marketplace** repository, not here. Add an entry whose `name` matches `plugin.json` (`test-design-pipeline`) and keep the versions equal:
-
-```json
-{
-  "name": "test-design-pipeline",
-  "source": "./plugins/test-design-pipeline",
-  "description": "Design automation-ready test cases from Markdown user stories.",
-  "version": "0.3.0",
-  "category": "testing",
-  "tags": ["testing", "test-design", "qa", "traceability"]
-}
-```
-
-Use `"source": "./plugins/test-design-pipeline"` when the plugin folder lives inside the marketplace repository, or a GitHub source object when it stays in its own repository. Then run `claude plugin validate ./path/to/marketplace`, add the marketplace in a clean environment, install, and confirm the four commands appear.
+This plugin is listed in the `tda` marketplace, defined by `.claude-plugin/marketplace.json` at the root of the `akhilvn-crypto/TDA-` repository (the plugin lives in `./test-design-pipeline`). To release an update, bump `version` in both that file and `.claude-plugin/plugin.json` (keep them equal), run `claude plugin validate .` from the repository root, and push to `main`. See the top-level README for the user-facing update steps.
 
 ## License
 
