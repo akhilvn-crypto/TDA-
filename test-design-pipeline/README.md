@@ -44,6 +44,7 @@ To try it from a local checkout without installing: `claude --plugin-dir ./test-
 | `/test-design-pipeline:start [path]` | Run the workflow. Offers to resume if a run exists in that project |
 | `/test-design-pipeline:status` | Phase, per-story progress, files and case counts, and which story files are stale because their story changed (read-only) |
 | `/test-design-pipeline:resume` | Continue the last incomplete run. Asks, story by story, before touching a file affected by a changed story |
+| `/test-design-pipeline:publish-zephyr <file>` | Publish one saved test-case file to Zephyr Scale Cloud and link every created case to a Jira story. Only when you run it; see "Publishing to Zephyr Scale" |
 | `/test-design-pipeline:validate [root] [story]` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability, for every story file or one story's. Changes nothing without your approval |
 
 ## Isolated story analysis
@@ -92,6 +93,29 @@ Each story gets `test-design/test-cases/<USER_STORY_ID>-testcase.md` (`US-001-te
 - **A changed story regenerates only its own file.** `status` and `resume` compare each story with the fingerprint recorded when its file was generated (`stories.<id>.testCaseFile.sourceSha256`) and list the stale files. For each one you choose keep, regenerate or skip. Regenerating shows a dry run (case IDs kept / changed / added / removed) first, replaces the file only after your yes, asks again if you had hand-edited it, and keeps a backup. Unchanged scenarios keep their IDs. Other stories' files are not read or written.
 - **Existing files are never silently overwritten.** Saving appends to the story's file and leaves existing bytes alone. If `<story>-testcase.md` already exists but was not recorded by the run, you are asked before anything is appended.
 - **Older output.** A run made before 0.5.0 has one consolidated `test-cases.md`. It keeps working and is never modified on its own; `validate` flags it, and `safe-file-operations.py split-legacy` (dry run first, then `--yes`) splits it into per-story files using each module's `User Story ID:` and moves the old file to `state/backups/`.
+
+## Publishing to Zephyr Scale
+
+Optional and fully separate from generation. Nothing is published unless you run it, and only the one file you name.
+
+```text
+/test-design-pipeline:publish-zephyr test-design/test-cases/US-001-testcase.md
+```
+
+Configure Zephyr Scale Cloud in the project's git-ignored `.env` (or the environment). Create the token in Jira under your profile > Zephyr Scale API Access Tokens:
+
+```env
+ZEPHYR_BASE_URL=https://api.zephyrscale.smartbear.com/v2
+ZEPHYR_API_TOKEN=<your token>
+```
+
+Jira is reached through the Atlassian connector you already have connected; no Jira credentials are added. Only Zephyr Scale **Cloud** (REST API v2) is supported; a Data Center/Server URL is refused.
+
+1. **Preflight (stops at the first failure with a fix):** Jira connector authenticated, accessible projects listed, **you confirm the Jira project**, Zephyr settings present, Zephyr reachable with a valid token and the project open, file exists/readable/valid.
+2. **Story mapping:** you give the Jira story key (`PROJ-101`); it must exist, belong to the confirmed project and be a Story (other types need your confirmation); its numeric issue ID is read from Jira. Nothing is created before this passes.
+3. **Convert and publish:** each case becomes a Zephyr test case (title, preconditions, ordered steps, per-step test data and expected results, tags as labels), is created once, and is linked to the story. Fields with no Zephyr equivalent are reported; `Depends on` needs your decision before the case is published without it.
+
+Safe retries: progress is saved after every stage in `test-design/state/zephyr-publishing.json` (+ `zephyr-publishing-audit.jsonl`, no secrets). Re-running the same command never creates a case twice, retries only a missing link/steps step, and never overwrites, edits or deletes anything in Zephyr. If a create request's outcome is unknown (timeout), that case waits for you to check Zephyr and run `zephyr-publish.py resolve` instead of risking a duplicate. The Markdown file is never modified. Details: `skills/zephyr-publishing/SKILL.md`.
 
 ## Test-case format
 
@@ -145,7 +169,7 @@ Both surfaces run the same commands, agents, rules and output contract. The plug
 
 ```text
 .claude-plugin/plugin.json   manifest
-commands/                    start, status, resume, validate (thin entry points)
+commands/                    start, status, resume, validate, publish-zephyr (thin entry points)
 agents/                      orchestrator, story-analyser (single-story worker), test-coverage-designer,
                              test-case-generator, test-case-quality-checker
 skills/                      reusable procedures (discovery, analysis, coverage,
@@ -160,7 +184,7 @@ tests/                       unittest suite and fixtures
 ## Develop and test
 
 ```bash
-python -m unittest discover -s tests -t tests      # 292 tests, standard library only
+python -m unittest discover -s tests -t tests      # all tests, standard library only
 claude plugin validate ./test-design-pipeline               # manifest and component check
 ```
 

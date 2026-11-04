@@ -4,7 +4,7 @@ This repository is a Claude Code **plugin marketplace** (`tda`). It currently sh
 
 | Plugin | Version | What it does |
 |---|---|---|
-| [`test-design-pipeline`](test-design-pipeline/README.md) | 0.5.0 | Turns Markdown user stories into automation-ready, traceable test cases |
+| [`test-design-pipeline`](test-design-pipeline/README.md) | 0.6.0 | Turns Markdown user stories into automation-ready, traceable test cases |
 
 Test Design decides **what to validate**. A downstream automation tool decides how to automate and run it. The plugin does not edit your stories, repeat BA gap analysis, or write Playwright code.
 
@@ -105,6 +105,7 @@ You get one test-case file per user story, `test-design/test-cases/<USER_STORY_I
 | `/test-design-pipeline:status [root]` | Read-only: phase, per-story progress, case counts, whether stories changed since generation |
 | `/test-design-pipeline:resume [root]` | Continue an interrupted run; asks before touching anything affected by changed stories |
 | `/test-design-pipeline:validate [root] [story]` | Check saved cases (format, IDs, data, dependencies, expected results) and traceability, for every story file or just one |
+| `/test-design-pipeline:publish-zephyr <file>` | Publish one saved test-case file to Zephyr Scale and link each created case to a Jira story (separate from generation; see the plugin README) |
 
 ---
 

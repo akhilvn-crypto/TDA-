@@ -9,7 +9,7 @@
       "name": "test-design-pipeline",
       "source": "./test-design-pipeline",
       "description": "Design automation-ready test cases from Markdown user stories: per-story analysis, technique-based coverage, canonical Markdown test cases with stable IDs, story traceability, resumable local state.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "license": "MIT",
       "keywords": ["testing", "test-design", "test-cases", "user-stories", "traceability", "qa"]
     }
